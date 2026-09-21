@@ -1,0 +1,15 @@
+# ---> Python / builds
+__pycache__/
+*.py[cod]
+build/
+dist/
+dist-new/
+*.spec
+
+# ---> Secrets (NEVER commit keys)
+.env
+.env.local
+
+# ---> Editors
+.vscode/
+.idea/
