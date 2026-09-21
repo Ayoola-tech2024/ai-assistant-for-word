@@ -12,6 +12,8 @@ Word is NEVER touched until you tap 'Yes, do it'.
 import ctypes
 from ctypes import wintypes
 import json
+import os
+import tempfile
 import threading
 import tkinter as tk
 import webbrowser
@@ -23,6 +25,45 @@ import word_agent
 
 KEY_URL_GROQ = "https://console.groq.com/keys"
 KEY_URL = "https://aistudio.google.com/apikey"
+
+
+class VoiceRecorder:
+    """100% free Windows native audio recorder using winmm.dll (no external libraries)."""
+    def __init__(self):
+        self.winmm = ctypes.windll.winmm
+        self.recording = False
+        self.alias = "WordAssistantRec"
+        buf = ctypes.create_unicode_buffer(500)
+        ctypes.windll.kernel32.GetShortPathNameW(tempfile.gettempdir(), buf, 500)
+        short_dir = buf.value or tempfile.gettempdir()
+        self.wav_path = os.path.join(short_dir, "word_assistant_mic.wav")
+
+    def start(self):
+        if self.recording:
+            return
+        if os.path.exists(self.wav_path):
+            try:
+                os.remove(self.wav_path)
+            except Exception:
+                pass
+        self.winmm.mciSendStringW("close " + self.alias, None, 0, None)
+        self.winmm.mciSendStringW("open new type waveaudio alias " + self.alias, None, 0, None)
+        res = self.winmm.mciSendStringW("record " + self.alias, None, 0, None)
+        if res != 0:
+            self.winmm.mciSendStringW("close " + self.alias, None, 0, None)
+            raise RuntimeError("Microphone could not start recording (MCI error %d)." % res)
+        self.recording = True
+
+    def stop(self):
+        if not self.recording:
+            return None
+        self.recording = False
+        self.winmm.mciSendStringW("stop " + self.alias, None, 0, None)
+        self.winmm.mciSendStringW("save " + self.alias + " " + self.wav_path, None, 0, None)
+        self.winmm.mciSendStringW("close " + self.alias, None, 0, None)
+        if os.path.exists(self.wav_path) and os.path.getsize(self.wav_path) > 1000:
+            return self.wav_path
+        return None
 
 ARG_LABELS = {
     "add_footer": (("text", "Footer text"),),
@@ -103,6 +144,7 @@ class Sidebar:
         root.attributes("-topmost", True)
         self.pending = None
         self.busy_action = None  # ("plan", cmd) or ("execute", plan)
+        self.recorder = VoiceRecorder()
         self._start_global_hotkey()
         cfg = agent.load_config()
         if not cfg.get("GEMINI_KEYS") and not cfg.get("GROQ_KEYS"):
@@ -201,6 +243,9 @@ class Sidebar:
         self.undo_btn = ttk.Button(btnrow, text="⟲ Undo",
                                    command=self.quick_undo)
         self.undo_btn.pack(side="left", padx=4)
+        self.mic_btn = ttk.Button(btnrow, text="🎙️ Voice",
+                                  command=self.toggle_mic)
+        self.mic_btn.pack(side="left", padx=(0, 4))
         self.topmost_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(btnrow, text="Stay on top",
                         variable=self.topmost_var,
@@ -286,6 +331,39 @@ class Sidebar:
                 self.root.after(0, self._say, "Undo: " + str(err))
         self._say("Undoing last change in Word...")
         self._run_bg(work)
+
+    def toggle_mic(self):
+        if not self.recorder.recording:
+            try:
+                self.recorder.start()
+                self.mic_btn.config(text="🔴 Stop Rec")
+                self._say("🎙️ Listening... speak in plain English, then click 'Stop Rec'.")
+                self._show_preview("🎙️ Listening to microphone...\n\n"
+                                   "Speak your Word command, then click 'Stop Rec'.")
+            except Exception as e:
+                self._say("Could not start recording: " + str(e)[:120])
+        else:
+            self.mic_btn.config(text="⏳ Transcribing...", state="disabled")
+            self._say("Transcribing voice with Groq Whisper...")
+            def work():
+                wav = self.recorder.stop()
+                if not wav:
+                    self.root.after(0, self._say, "No voice detected. Click Voice to try again.")
+                    self.root.after(0, lambda: self.mic_btn.config(text="🎙️ Voice", state="normal"))
+                    return
+                text, err = agent.transcribe_audio(wav)
+                def finish():
+                    self.mic_btn.config(text="🎙️ Voice", state="normal")
+                    if text:
+                        self.cmd.delete("1.0", "end")
+                        self.cmd.insert("end", text)
+                        self._say('Heard: "%s"' % text)
+                        self.send()
+                    else:
+                        self._say("Voice failed: " + str(err))
+                        self._show_preview("Voice transcription failed:\n" + str(err))
+                self.root.after(0, finish)
+            self._run_bg(work)
 
     def snap_to_word(self):
         try:

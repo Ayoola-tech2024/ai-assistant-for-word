@@ -365,6 +365,34 @@ def _groq_call(cfg, system_text, user_text, want_json, note_fn=None):
     return None, "failed:" + last
 
 
+def transcribe_audio(wav_path):
+    """Transcribe audio WAV file using Groq Whisper API (100% free)."""
+    cfg = load_config()
+    keys = cfg.get("GROQ_KEYS", [])
+    if not keys:
+        return None, "No Groq key found. Add a free Groq key in Keys."
+    for key in keys:
+        try:
+            with open(wav_path, "rb") as f:
+                r = requests.post(
+                    "https://api.groq.com/openai/v1/audio/transcriptions",
+                    headers={"Authorization": "Bearer " + key},
+                    files={"file": ("speech.wav", f, "audio/wav")},
+                    data={"model": "whisper-large-v3"},
+                    timeout=30,
+                )
+            if r.status_code == 200:
+                txt = r.json().get("text", "").strip()
+                return txt, None
+            elif r.status_code == 429:
+                continue
+            else:
+                return None, "Groq Whisper %s: %s" % (r.status_code, r.text[:120])
+        except Exception as e:
+            return None, "Voice transcription error: " + str(e)[:150]
+    return None, "Groq free voice limit reached or connection failed."
+
+
 def _clients(cfg):
     """One SDK client per key (fresh each operation; avoids stale pools)."""
     return [genai.Client(api_key=k) for k in cfg.get("GEMINI_KEYS", [])]

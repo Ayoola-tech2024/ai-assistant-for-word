@@ -30,7 +30,7 @@ AI Assistant for Word is a lightweight Windows companion that sits beside Micros
 2. **Open your Word document.**
 3. **Double-click `Start AI Assistant`.** A small window opens beside Word.
 4. **First run only:** tap `Get Groq key` (free, 2 minutes), paste the key, tap `Save & Start`. Done forever.
-5. **Type a request**, press Send, check the preview, tap **Yes, do it** — watch Word change instantly.
+5. **Type or speak a request** (tap `🎙️ Voice` to speak naturally), check the preview, tap **Yes, do it** — watch Word change instantly.
 
 > Do not open anything inside the engine folder — it contains engine files. `Start AI Assistant` is the only entry point.
 
@@ -40,7 +40,7 @@ AI Assistant for Word runs on free cloud AI — no subscription, no card.
 
 | Key | Free allowance | Role |
 |---|---|---|
-| **Groq** (recommended) | Thousands of requests/day | Primary engine |
+| **Groq** (recommended) | Thousands of requests/day | Primary AI planning + **Voice Dictation** (`whisper-large-v3`) |
 | **Google Gemini** | ~20 requests/day | Automatic backup |
 
 Add or rotate keys anytime via the **Keys** button in the app. Keys are stored only on your PC (`%APPDATA%\word-cloud-agent\settings.json`) and are never transmitted anywhere except the provider's API.
