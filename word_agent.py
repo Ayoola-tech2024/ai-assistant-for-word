@@ -678,26 +678,37 @@ def word_count():
         return {"ok": False, "action": "word_count", "error": str(e)[:300]}
 
 
-def export_pdf():
-    """Save a PDF next to the document (or ask to save the doc first)."""
+def export_pdf(output_path=None, open_folder=True):
+    """Save a PDF next to the document (or Desktop if unsaved) and reveal in Explorer."""
     try:
         import os
+        import re
+        import subprocess
         app, doc = _bind()
         info = _doc_id(doc)
         path = info.get("path", "") or ""
-        if not path or path.startswith("Document"):
+        if output_path:
+            pdf = output_path
+        elif path and not path.startswith("Document") and os.path.exists(path):
+            pdf = os.path.splitext(path)[0] + ".pdf"
+        else:
+            desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+            doc_name = (info.get("name") or "Document").replace(".docx", "").replace(".doc", "")
+            clean_name = re.sub(r'[\\/*?:"<>|]', "", doc_name).strip() or "Word_Document"
+            pdf = os.path.join(desktop, "%s.pdf" % clean_name)
+            if os.path.exists(pdf):
+                pdf = os.path.join(desktop, "%s_%d.pdf" % (clean_name, int(time.time())))
+
+        doc.ExportAsFixedFormat(pdf, 17)  # wdExportFormatPDF = 17
+
+        if open_folder and os.path.exists(pdf):
             try:
-                saved = app.Dialogs(88).Show()  # wdDialogFileSaveAs
-                if not saved:
-                    return {"ok": False, "action": "export_pdf",
-                            "error": "Save the Word document first."}
-                path = doc.FullName
+                subprocess.Popen(['explorer', '/select,', os.path.normpath(pdf)])
             except Exception:
-                return {"ok": False, "action": "export_pdf",
-                        "error": "Save the Word document first, then export."}
-        pdf = os.path.splitext(path)[0] + ".pdf"
-        doc.ExportAsFixedFormat(pdf, 17)  # wdExportFormatPDF
+                pass
+
         return {"ok": True, "action": "export_pdf", "doc": info,
+                "pdf_path": pdf,
                 "report": "PDF saved: %s" % pdf}
     except pywintypes.com_error as e:
         if _is_busy(e):
@@ -705,6 +716,107 @@ def export_pdf():
         return {"ok": False, "action": "export_pdf", "error": str(e)[:300]}
     except Exception as e:
         return {"ok": False, "action": "export_pdf", "error": str(e)[:300]}
+
+
+def get_document_analytics():
+    """Compute detailed reading telemetry, word stats, and Flesch-Kincaid readability."""
+    try:
+        import re
+        app, doc = _bind()
+        info = _doc_id(doc)
+
+        text = doc.Content.Text or ""
+        text = text.replace("\r", "\n").replace("\x07", "").replace("\x0c", "").strip()
+
+        try:
+            words_count = doc.ComputeStatistics(0)  # wdStatisticWords
+            chars_count = doc.ComputeStatistics(3)  # wdStatisticCharacters
+            paras_count = doc.ComputeStatistics(4)  # wdStatisticParagraphs
+            pages_count = doc.ComputeStatistics(2)  # wdStatisticPages
+        except Exception:
+            words_count = len(re.findall(r'\b\w+\b', text))
+            chars_count = len(text)
+            paras_count = len([p for p in text.split("\n") if p.strip()])
+            pages_count = 1
+
+        words = re.findall(r'\b[a-zA-Z0-9_\'-]+\b', text)
+        sentences = [s.strip() for s in re.split(r'[.!?]+', text) if s.strip()]
+
+        num_words = max(1, len(words) or words_count)
+        num_sentences = max(1, len(sentences))
+
+        def _syllables(w):
+            w = w.lower().strip()
+            if len(w) <= 3:
+                return 1
+            w = re.sub(r'(?:[^laeiouy]|ed|es|e)$', '', w)
+            w = re.sub(r'^y', '', w)
+            matches = re.findall(r'[aeiouy]{1,2}', w)
+            return max(1, len(matches))
+
+        total_syllables = sum(_syllables(w) for w in words) if words else num_words
+
+        # Flesch Reading Ease: 206.835 - 1.015*(words/sentences) - 84.6*(syllables/words)
+        flesch_score = 206.835 - (1.015 * (num_words / num_sentences)) - (84.6 * (total_syllables / num_words))
+        flesch_score = max(0.0, min(100.0, round(flesch_score, 1)))
+
+        # Flesch-Kincaid Grade Level: 0.39*(words/sentences) + 11.8*(syllables/words) - 15.59
+        fk_grade = (0.39 * (num_words / num_sentences)) + (11.8 * (total_syllables / num_words)) - 15.59
+        fk_grade = max(1.0, round(fk_grade, 1))
+
+        if flesch_score >= 90:
+            level = "Very Easy (5th Grade)"
+        elif flesch_score >= 80:
+            level = "Easy (6th Grade)"
+        elif flesch_score >= 70:
+            level = "Fairly Easy (7th Grade)"
+        elif flesch_score >= 60:
+            level = "Standard (8th-9th Grade - Plain English)"
+        elif flesch_score >= 50:
+            level = "Fairly Difficult (High School)"
+        elif flesch_score >= 30:
+            level = "Difficult (College)"
+        else:
+            level = "Very Difficult (Academic/Technical)"
+
+        read_time_min = max(1, round(num_words / 200))
+        speak_time_min = max(1, round(num_words / 130))
+
+        report = (
+            "📊 Document Telemetry & Health:\n"
+            "• Pages: %d | Paragraphs: %d\n"
+            "• Words: %s | Characters: %s\n"
+            "• Reading Time: ~%d min (silent reading)\n"
+            "• Speaking Time: ~%d min (presentation pace)\n"
+            "• Readability: %.1f / 100 (%s)\n"
+            "• US Grade Level: %.1f"
+            % (pages_count, paras_count, f"{num_words:,}", f"{chars_count:,}",
+               read_time_min, speak_time_min, flesch_score, level, fk_grade)
+        )
+
+        return {
+            "ok": True,
+            "action": "get_document_analytics",
+            "doc": info,
+            "report": report,
+            "stats": {
+                "pages": pages_count,
+                "paragraphs": paras_count,
+                "words": num_words,
+                "characters": chars_count,
+                "reading_time_min": read_time_min,
+                "speaking_time_min": speak_time_min,
+                "flesch_score": flesch_score,
+                "flesch_level": level,
+                "grade_level": fk_grade,
+            }
+        }
+    except pywintypes.com_error as e:
+        if _is_busy(e):
+            return _busy_result("get_document_analytics")
+        return {"ok": False, "action": "get_document_analytics", "error": str(e)[:300]}
+    except Exception as e:
+        return {"ok": False, "action": "get_document_analytics", "error": str(e)[:300]}
 
 
 def undo_last(steps=1):
@@ -1054,5 +1166,6 @@ TOOLS = {
     "add_watermark": add_watermark,
     "insert_chart": insert_chart,
     "insert_image": insert_image,
+    "get_document_analytics": get_document_analytics,
 }
 

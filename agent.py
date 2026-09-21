@@ -115,7 +115,8 @@ TOOLS = ["add_footer", "replace_text", "delete_para_containing",
          "make_list", "align_paras", "font_size", "font_color", "line_spacing",
          "set_orientation", "add_header", "add_page_numbers", "word_count",
          "export_pdf", "undo_last", "toggle_track_changes", "add_comment",
-         "insert_toc", "add_watermark", "insert_chart", "insert_image"]
+         "insert_toc", "add_watermark", "insert_chart", "insert_image",
+         "get_document_analytics", "translate"]
 
 REQUIRED_ARGS = {
     "add_footer": ("text",),
@@ -152,6 +153,8 @@ REQUIRED_ARGS = {
     "add_watermark": ("text",),
     "insert_chart": ("kind", "labels", "values"),
     "insert_image": ("prompt",),
+    "get_document_analytics": (),
+    "translate": ("target_language",),
 }
 OPTIONAL_ARGS = {
     "draft": ("place",),
@@ -170,6 +173,8 @@ OPTIONAL_ARGS = {
     "insert_toc": ("place",),
     "insert_chart": ("title", "place"),
     "insert_image": ("place",),
+    "export_pdf": ("open_folder",),
+    "translate": ("scope",),
 }
 
 RESPONSE_SCHEMA = {
@@ -186,6 +191,10 @@ RESPONSE_SCHEMA = {
                 "question": {"type": "STRING"},
                 "query": {"type": "STRING"},
                 "prompt": {"type": "STRING"},
+                "target_language": {"type": "STRING"},
+                "scope": {"type": "STRING",
+                          "enum": ["selection", "document"]},
+                "open_folder": {"type": "STRING"},
                 "place": {"type": "STRING",
                           "enum": ["cursor", "end"]},
                 "style": {"type": "STRING"},
@@ -218,7 +227,7 @@ RESPONSE_SCHEMA = {
 
 SYSTEM = (
     "You are a coworker inside Microsoft Word. Pick ONE tool for the user's "
-    "request and extract its arguments. Output JSON only, matching the schema.\n"
+    "request and extract its arguments. Output JSON only in the format: {\"tool\": \"<tool_name>\", \"args\": {}}.\n"
     "Small edits:\n"
     "- add_footer {text}: set the footer on every section.\n"
     "- replace_text {old, new}: swap every occurrence of old with new.\n"
@@ -260,22 +269,34 @@ SYSTEM = (
     "- review {instruction}: review the document and add 1-5 margin comments with critique/suggestions.\n"
     "Reports & safety:\n"
     "- word_count {}: counts (nothing changes).\n"
-    "- export_pdf {}: save a PDF next to the document.\n"
+    "- get_document_analytics {}: compute reading time, speaking pace, word stats, and Flesch readability.\n"
+    "- export_pdf {}: export the active document to a clean PDF and reveal it in Windows Explorer.\n"
     "- undo_last {steps?=1}: undo recent change(s).\n"
     "Coworker jobs:\n"
     "- draft {instruction, place=cursor|end}: WRITE new content from scratch.\n"
     "- refine {instruction}: IMPROVE the selected text (or whole document) — grammar, tone, clarity.\n"
+    "- translate {target_language, scope?=selection}: translate text into another language (French, Spanish, German, Yoruba, etc.).\n"
     "- ask {question}: answer questions about the document.\n"
     "- research {query, instruction}: search the internet and add findings.\n"
-    "Rules: writing new content -> draft. Improving existing text -> refine. "
+    "Rules: writing new content -> draft. Improving existing text -> refine. Translating language -> translate. "
     "Charts -> insert_chart. Images -> insert_image. Tables with data -> insert_data_table. "
     "Margin review notes -> review. Redline revisions -> toggle_track_changes. Questions -> ask. "
+    "Analytics/health -> get_document_analytics. Export PDF -> export_pdf. "
     "Never invent tools. Always fill required args."
 )
 
 
 def _validate(plan):
+    if not isinstance(plan, dict):
+        return {"ok": False, "error": "Invalid plan format"}
     tool = plan.get("tool")
+    if not tool:
+        for k in plan:
+            if k in REQUIRED_ARGS:
+                tool = k
+                args = plan[k] if isinstance(plan[k], dict) else {}
+                plan = {"tool": tool, "args": args}
+                break
     if tool not in REQUIRED_ARGS:
         return {"ok": False, "error": "Unknown tool: %r" % (tool,)}
     args = plan.get("args") or plan.get("arguments") or {}
@@ -715,6 +736,28 @@ def execute_action(plan, note_fn=None):
             if ctx.get("scope") == "selection":
                 return word_agent.insert_at_cursor(new_text)
             return word_agent.set_full_text(new_text)
+        if tool == "translate":
+            ctx = word_agent.get_context()
+            if not ctx.get("ok"):
+                return ctx
+            lang = args.get("target_language") or "Spanish"
+            text_to_translate = ctx.get("text", "")
+            if not text_to_translate.strip():
+                return {"ok": False, "error": "No text found in Word to translate."}
+            if note_fn:
+                note_fn("Translating text to %s..." % lang)
+            translated, err = _call_text(
+                cfg,
+                "You are an expert professional translator. Translate the following Word %s text faithfully into %s.\n"
+                "Preserve formatting, tone, line breaks, lists, and numbers.\n"
+                "Return ONLY the translated text, no preamble, commentary, or quotes:\n\n%s"
+                % (ctx.get("scope"), lang, text_to_translate),
+                note_fn=note_fn)
+            if err:
+                return {"ok": False, "error": err}
+            if ctx.get("scope") == "selection":
+                return word_agent.insert_at_cursor(translated)
+            return word_agent.set_full_text(translated)
         if tool == "research":
             if note_fn:
                 note_fn("Searching the internet...")

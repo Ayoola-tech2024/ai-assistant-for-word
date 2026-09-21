@@ -101,6 +101,8 @@ ARG_LABELS = {
     "add_watermark": (("text", "Watermark text"),),
     "insert_chart": (("kind", "Chart type"), ("title", "Title"), ("labels", "Labels"), ("values", "Values")),
     "insert_image": (("prompt", "Illustration idea"),),
+    "get_document_analytics": (),
+    "translate": (("target_language", "Target language"),),
 }
 
 TOOL_NAMES = {
@@ -138,6 +140,8 @@ TOOL_NAMES = {
     "add_watermark": "Add watermark",
     "insert_chart": "Insert data chart",
     "insert_image": "Insert AI illustration",
+    "get_document_analytics": "Analyze reading metrics & stats",
+    "translate": "Translate text",
 }
 
 
@@ -214,22 +218,26 @@ class Sidebar:
     # -- main chat UI --
     def _build_main(self):
         # Open document header
-        top = ttk.Frame(self.root, padding=8)
+        top = ttk.Frame(self.root, padding=(8, 8, 8, 4))
         top.pack(fill="x")
         self.doc_var = tk.StringVar(value="Open document: (checking...)")
         ttk.Label(top, textvariable=self.doc_var,
                   font=("Segoe UI", 9, "bold")).pack(
             side="left", fill="x", expand=True)
-        ttk.Button(top, text="Refresh", command=self.refresh_doc).pack(
+        ttk.Button(top, text="Refresh", width=7, command=self.refresh_doc).pack(
             side="right")
-        ttk.Button(top, text="Snap", command=self.snap_to_word).pack(
+        ttk.Button(top, text="Snap", width=5, command=self.snap_to_word).pack(
             side="right", padx=(0, 2))
-        ttk.Button(top, text="Templates", command=self._templates_popup).pack(
+        ttk.Button(top, text="Keys", width=5, command=self._keys_popup).pack(
             side="right", padx=(0, 2))
-        ttk.Button(top, text="📎 File", command=self.attach_file).pack(
-            side="right", padx=(0, 2))
-        ttk.Button(top, text="Keys", command=self._keys_popup).pack(
-            side="right", padx=(0, 2))
+
+        # Quick Actions bar (PDF, Stats, Templates, Attach)
+        act_row = ttk.Frame(self.root, padding=(8, 0, 8, 4))
+        act_row.pack(fill="x")
+        ttk.Button(act_row, text="📄 PDF", width=6, command=self.quick_export_pdf).pack(side="left")
+        ttk.Button(act_row, text="📊 Stats", width=7, command=self.quick_stats).pack(side="left", padx=3)
+        ttk.Button(act_row, text="📑 Templates", command=self._templates_popup).pack(side="left", padx=3)
+        ttk.Button(act_row, text="📎 Attach", command=self.attach_file).pack(side="left", padx=3)
 
         # Attachment bar (hidden by default)
         self.attach_frame = ttk.Frame(self.root, padding=(8, 2))
@@ -336,6 +344,33 @@ class Sidebar:
                 msg.set("Could not save: " + str(e)[:120])
         ttk.Button(pop, text="Save keys", command=save).pack(pady=6)
 
+    def quick_export_pdf(self):
+        def work():
+            res = word_agent.export_pdf(open_folder=True)
+            if res.get("ok"):
+                msg = res.get("report", "PDF saved.")
+                self.root.after(0, self._say, "📄 " + msg)
+                self.root.after(0, self._show_preview, "Exported to PDF:\n\n%s\n\n(Opened in File Explorer)" % res.get("pdf_path", ""))
+            else:
+                err = res.get("error") or "Failed to export PDF."
+                self.root.after(0, self._say, "PDF export: " + str(err))
+                self.root.after(0, self._show_preview, "Could not export PDF:\n" + str(err))
+        self._say("Exporting active document to PDF...")
+        self._run_bg(work)
+
+    def quick_stats(self):
+        def work():
+            res = word_agent.get_document_analytics()
+            if res.get("ok"):
+                self.root.after(0, self._say, "Document telemetry calculated.")
+                self.root.after(0, self._show_preview, res.get("report", "No stats available."))
+            else:
+                err = res.get("error") or "Failed to analyze document."
+                self.root.after(0, self._say, "Stats: " + str(err))
+                self.root.after(0, self._show_preview, "Could not analyze document:\n" + str(err))
+        self._say("Analyzing document reading metrics & readability...")
+        self._run_bg(work)
+
     def quick_undo(self):
         def work():
             res = word_agent.undo_last(1)
@@ -405,7 +440,7 @@ class Sidebar:
     def _templates_popup(self):
         pop = tk.Toplevel(self.root)
         pop.title("Templates")
-        pop.geometry("420x460")
+        pop.geometry("420x540")
         pop.attributes("-topmost", True)
         ttk.Label(pop, text="One-Click Document Templates",
                   font=("Segoe UI", 11, "bold"), padding=(10, 10, 10, 4)).pack(anchor="w")
@@ -413,6 +448,14 @@ class Sidebar:
                   font=("Segoe UI", 9), padding=(10, 0, 10, 8)).pack(anchor="w")
 
         templates = [
+            ("📄 1-Click Export to PDF",
+             "Export this active Word document to a clean PDF and reveal it in File Explorer."),
+            ("📊 Document Reading & Readability Stats",
+             "Compute reading time, speaking pace, word counts, and Flesch readability score."),
+            ("🌐 Translate to French",
+             "Translate the selected text into fluent professional French."),
+            ("🌐 Translate to Spanish",
+             "Translate the selected text into fluent professional Spanish."),
             ("📄 Non-Disclosure Agreement (NDA)",
              "Write a comprehensive Non-Disclosure Agreement (NDA) between Disclosing Party and Receiving Party with standard confidentiality terms, exclusions, and a 2-year term."),
             ("📑 Business Project Proposal",
