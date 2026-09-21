@@ -9,11 +9,14 @@ No tech skills needed:
 
 Word is NEVER touched until you tap 'Yes, do it'.
 """
+import ctypes
+from ctypes import wintypes
 import json
 import threading
 import tkinter as tk
 import webbrowser
 from tkinter import ttk
+import win32gui
 
 import agent
 import word_agent
@@ -30,6 +33,7 @@ ARG_LABELS = {
     "refine": (("instruction", "Improve like this"),),
     "ask": (("question", "Question"),),
     "research": (("query", "Look up"), ("instruction", "Write it as")),
+    "review": (("instruction", "Review focus"),),
     "format_text": (("style", "Style"), ("page", "Page (blank=all)")),
     "find_text": (("text", "Find"),),
     "select_text": (("text", "Highlight"),),
@@ -37,6 +41,7 @@ ARG_LABELS = {
     "delete_page": (("page", "Page"),),
     "apply_heading": (("text", "Paragraph with"), ("level", "Level 1-3")),
     "insert_table": (("rows", "Rows"), ("cols", "Columns")),
+    "insert_data_table": (("headers", "Columns"), ("rows", "Data"), ("style", "Style")),
     "make_list": (("kind", "Kind"),),
     "align_paras": (("how", "Align"),),
     "font_size": (("size", "Size"),),
@@ -48,6 +53,10 @@ ARG_LABELS = {
     "word_count": (),
     "export_pdf": (),
     "undo_last": (("steps", "Steps"),),
+    "toggle_track_changes": (("enabled", "Track Changes"),),
+    "add_comment": (("text", "Comment"), ("target", "Target phrase")),
+    "insert_toc": (("place", "Position"),),
+    "add_watermark": (("text", "Watermark text"),),
 }
 
 TOOL_NAMES = {
@@ -59,6 +68,7 @@ TOOL_NAMES = {
     "refine": "Improve the writing",
     "ask": "Answer (Word stays unchanged)",
     "research": "Research the internet + add to doc",
+    "review": "Review document (margin comments)",
     "format_text": "Underline / bold / italic",
     "find_text": "Find in document",
     "select_text": "Highlight match",
@@ -66,6 +76,7 @@ TOOL_NAMES = {
     "delete_page": "Delete page",
     "apply_heading": "Make heading",
     "insert_table": "Insert table",
+    "insert_data_table": "Insert smart data table",
     "make_list": "Bullets / numbers",
     "align_paras": "Align text",
     "font_size": "Font size",
@@ -77,6 +88,10 @@ TOOL_NAMES = {
     "word_count": "Count words",
     "export_pdf": "Save as PDF",
     "undo_last": "Undo",
+    "toggle_track_changes": "Toggle Track Changes",
+    "add_comment": "Add margin comment",
+    "insert_toc": "Insert Table of Contents",
+    "add_watermark": "Add watermark",
 }
 
 
@@ -88,11 +103,13 @@ class Sidebar:
         root.attributes("-topmost", True)
         self.pending = None
         self.busy_action = None  # ("plan", cmd) or ("execute", plan)
+        self._start_global_hotkey()
         cfg = agent.load_config()
         if not cfg.get("GEMINI_KEYS") and not cfg.get("GROQ_KEYS"):
             self._build_setup()
         else:
             self._build_main()
+        self.root.after(300, self.snap_to_word)
 
     # -- first-run setup: paste key once --
     def _build_setup(self):
@@ -157,8 +174,12 @@ class Sidebar:
             side="left", fill="x", expand=True)
         ttk.Button(top, text="Refresh", command=self.refresh_doc).pack(
             side="right")
+        ttk.Button(top, text="Snap", command=self.snap_to_word).pack(
+            side="right", padx=(0, 2))
+        ttk.Button(top, text="Templates", command=self._templates_popup).pack(
+            side="right", padx=(0, 2))
         ttk.Button(top, text="Keys", command=self._keys_popup).pack(
-            side="right", padx=(0, 4))
+            side="right", padx=(0, 2))
 
         # Plain-English input
         mid = ttk.Frame(self.root, padding=(8, 0, 8, 0))
@@ -166,8 +187,8 @@ class Sidebar:
         ttk.Label(mid, text="Tell Word what to do (plain English):").pack(
             anchor="w")
         ttk.Label(mid, text='e.g. "write a leave request letter" or '
-                            '"find current fuel prices and add them" or '
-                            '"summarise this"',
+                            '"review this document" or '
+                            '"turn on track changes"',
                   font=("Segoe UI", 8)).pack(anchor="w")
         self.cmd = tk.Text(mid, height=3, font=("Segoe UI", 11))
         self.cmd.pack(fill="x")
@@ -177,6 +198,9 @@ class Sidebar:
         self.send_btn = ttk.Button(btnrow, text="Send (Ctrl+Enter)",
                                    command=self.send)
         self.send_btn.pack(side="left")
+        self.undo_btn = ttk.Button(btnrow, text="⟲ Undo",
+                                   command=self.quick_undo)
+        self.undo_btn.pack(side="left", padx=4)
         self.topmost_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(btnrow, text="Stay on top",
                         variable=self.topmost_var,
@@ -250,6 +274,117 @@ class Sidebar:
             except Exception as e:
                 msg.set("Could not save: " + str(e)[:120])
         ttk.Button(pop, text="Save keys", command=save).pack(pady=6)
+
+    def quick_undo(self):
+        def work():
+            res = word_agent.undo_last(1)
+            if res.get("ok"):
+                self.root.after(0, self._say, "⟲ Undid last change in Word.")
+                self.root.after(0, self._show_preview, "Undid the last change in Word.")
+            else:
+                err = res.get("error") or res.get("msg") or "Failed"
+                self.root.after(0, self._say, "Undo: " + str(err))
+        self._say("Undoing last change in Word...")
+        self._run_bg(work)
+
+    def snap_to_word(self):
+        try:
+            hwnd = win32gui.FindWindow("OpusApp", None)
+            if not hwnd or not win32gui.IsWindowVisible(hwnd):
+                self._say("Word is not open. Open a document first to snap beside it.")
+                return False
+            rect = win32gui.GetWindowRect(hwnd)
+            w_left, w_top, w_right, w_bottom = rect
+            s_width = self.root.winfo_screenwidth()
+            s_height = self.root.winfo_screenheight()
+            w = 400
+            h = min(max(w_bottom - w_top, 560), s_height - 60)
+            x = min(w_right, s_width - w - 10)
+            y = max(0, w_top)
+            self.root.geometry("%dx%d+%d+%d" % (w, h, x, y))
+            self._say("Snapped beside Word.")
+            return True
+        except Exception as e:
+            self._say("Could not snap to Word: " + str(e)[:100])
+            return False
+
+    def _templates_popup(self):
+        pop = tk.Toplevel(self.root)
+        pop.title("Templates")
+        pop.geometry("420x460")
+        pop.attributes("-topmost", True)
+        ttk.Label(pop, text="One-Click Document Templates",
+                  font=("Segoe UI", 11, "bold"), padding=(10, 10, 10, 4)).pack(anchor="w")
+        ttk.Label(pop, text="Click a template to load it into the assistant:",
+                  font=("Segoe UI", 9), padding=(10, 0, 10, 8)).pack(anchor="w")
+
+        templates = [
+            ("📄 Non-Disclosure Agreement (NDA)",
+             "Write a comprehensive Non-Disclosure Agreement (NDA) between Disclosing Party and Receiving Party with standard confidentiality terms, exclusions, and a 2-year term."),
+            ("📑 Business Project Proposal",
+             "Draft a professional Project Proposal with Executive Summary, Scope of Work, Deliverables, Timeline, and Investment sections."),
+            ("✉️ Formal Resignation Letter",
+             "Write a polite, formal resignation letter stating a 2-week notice period, expressing gratitude for opportunities, and offering transition support."),
+            ("📅 Meeting Minutes & Action Items",
+             "Create a professional Meeting Minutes template with Date, Attendees, Agenda, Discussion Summary, and an Action Items table."),
+            ("⚖️ Document Review & Margin Comments",
+             "Review this document thoroughly and add margin comments highlighting any vague phrasing, risks, or grammar improvements."),
+            ("📊 Comparison Table",
+             "Create a competitor comparison table comparing 3 options across Features, Pricing, Pros, and Cons."),
+            ("🏷️ Confidential Watermark & Header",
+             "Add a CONFIDENTIAL watermark and set header Confidential — Internal Use Only."),
+            ("📑 Table of Contents",
+             "Insert a clickable Table of Contents at the beginning of the document."),
+        ]
+
+        frame = ttk.Frame(pop, padding=10)
+        frame.pack(fill="both", expand=True)
+
+        for title, prompt in templates:
+            btn_frame = ttk.Frame(frame)
+            btn_frame.pack(fill="x", pady=2)
+            def make_handler(p):
+                return lambda: self._apply_template(p, pop)
+            ttk.Button(btn_frame, text=title, command=make_handler(prompt)).pack(fill="x")
+
+    def _apply_template(self, prompt, pop=None):
+        if pop:
+            pop.destroy()
+        self.cmd.delete("1.0", "end")
+        self.cmd.insert("end", prompt)
+        self.cmd.focus_set()
+        self._say("Loaded template: " + prompt[:50] + "...")
+
+    def _start_global_hotkey(self):
+        def worker():
+            user32 = ctypes.windll.user32
+            MOD_ALT = 0x0001
+            MOD_CONTROL = 0x0002
+            VK_W = 0x57  # 'W'
+            HOTKEY_ID = 101
+            if not user32.RegisterHotKey(None, HOTKEY_ID, MOD_CONTROL | MOD_ALT, VK_W):
+                return
+            try:
+                msg = wintypes.MSG()
+                while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
+                    if msg.message == 0x0312:  # WM_HOTKEY
+                        self.root.after(0, self._toggle_summon)
+                    user32.TranslateMessage(ctypes.byref(msg))
+                    user32.DispatchMessageW(ctypes.byref(msg))
+            finally:
+                user32.UnregisterHotKey(None, HOTKEY_ID)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _toggle_summon(self):
+        try:
+            if self.root.state() == "iconic" or not self.root.winfo_viewable():
+                self.root.deiconify()
+            self.root.lift()
+            self.root.attributes("-topmost", True)
+            self.cmd.focus_set()
+            self._say("Summoned via Ctrl+Alt+W.")
+        except Exception:
+            pass
 
     def _say(self, msg):
         self.log.config(state="normal")
