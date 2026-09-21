@@ -351,6 +351,7 @@ def _groq_call(cfg, system_text, user_text, want_json, note_fn=None):
     limited = 0
     last = "unknown"
     for i, key in enumerate(keys):
+        key_all_models_limited = True
         for model in GROQ_MODELS:
             body = {
                 "model": model,
@@ -370,13 +371,15 @@ def _groq_call(cfg, system_text, user_text, want_json, note_fn=None):
                     json=body, timeout=60)
             except Exception as e:
                 last = "network: " + str(e)[:150]
-                break  # network issue — same for all keys, go to fallback
+                key_all_models_limited = False
+                break  # network issue — try next key
             if r.status_code == 429:
-                limited += 1
-                if note_fn and len(keys) > 1:
-                    note_fn("Groq key %d of %d is busy — switching..."
-                            % (i + 1, len(keys)))
-                break  # next key
+                last = "Groq %s rate limit" % model
+                if note_fn:
+                    note_fn("Groq model %s is busy — trying next free model..."
+                            % model.split('/')[-1])
+                continue  # DO NOT BREAK! Try next model on this key!
+            key_all_models_limited = False
             if r.status_code == 401:
                 last = "Groq key %d rejected (check the key)" % (i + 1)
                 break  # bad key — next key
@@ -388,6 +391,11 @@ def _groq_call(cfg, system_text, user_text, want_json, note_fn=None):
                 return r.json()["choices"][0]["message"]["content"], None
             except Exception as e:
                 last = "bad reply: " + str(e)[:150]
+        if key_all_models_limited:
+            limited += 1
+            if note_fn and len(keys) > 1:
+                note_fn("Groq key %d of %d busy across all models — trying next key..."
+                        % (i + 1, len(keys)))
     if limited >= len(keys) > 0:
         return None, "limited"
     return None, "failed:" + last
@@ -421,6 +429,39 @@ def transcribe_audio(wav_path):
     return None, "Groq free voice limit reached or connection failed."
 
 
+# Module-level state for intelligent key rotation and cooldown memory
+_KEY_COOLDOWNS = {}  # key string -> timestamp when cooldown expires
+_KEY_ROTATION_INDEX = 0
+
+
+def _get_ordered_clients(cfg):
+    """Return list of (original_index, key, Client) with ready keys first and round-robin."""
+    global _KEY_ROTATION_INDEX
+    keys = cfg.get("GEMINI_KEYS", [])
+    if not keys:
+        return []
+    n = len(keys)
+    start = _KEY_ROTATION_INDEX % n
+    _KEY_ROTATION_INDEX = (_KEY_ROTATION_INDEX + 1) % n
+    now = time.time()
+    ready = []
+    cooling = []
+    for offset in range(n):
+        idx = (start + offset) % n
+        k = keys[idx]
+        if _KEY_COOLDOWNS.get(k, 0) <= now:
+            ready.append((idx, k))
+        else:
+            cooling.append((idx, k))
+    ordered = []
+    for idx, k in (ready + cooling):
+        try:
+            ordered.append((idx, k, genai.Client(api_key=k)))
+        except Exception:
+            pass
+    return ordered
+
+
 def _clients(cfg):
     """One SDK client per key (fresh each operation; avoids stale pools)."""
     return [genai.Client(api_key=k) for k in cfg.get("GEMINI_KEYS", [])]
@@ -442,11 +483,7 @@ def _retry_delay(msg, cap=90):
 
 
 def _call_json(cfg, prompt, note_fn=None):
-    """Strict-JSON call across keys: rotate on 429, quick 503 retries,
-    one patient wait only when EVERY key is limited. note_fn(str) gets
-    human progress updates (sidebar shows them instead of hanging).
-    Groq free engine is tried first; Gemini rotation is the fallback.
-    Returns (obj, error)."""
+    """Strict-JSON call across keys: Groq primary, smart ready-first Gemini rotation fallback."""
     if cfg.get("GROQ_KEYS"):
         if note_fn:
             note_fn("Asking the free engine...")
@@ -458,21 +495,21 @@ def _call_json(cfg, prompt, note_fn=None):
                 pass  # fall through to Gemini
         elif tag != "limited":
             pass  # keys bad/network — fall through to Gemini
-    clients = _clients(cfg)
+    clients = _get_ordered_clients(cfg)
     if not clients:
-        return None, ("No free key saved yet. Open Setup: add a Groq key "
+        return None, ("No free key saved yet. Open Keys: add a Groq key "
                       "(recommended) or a Gemini key, paste, Save.")
     last = "unknown"
-    waits = {}  # key index -> unix time when usable again
     tried_wait = False
-    for _round in range(3):
-        for i, client in enumerate(clients):
-            if waits.get(i, 0) > time.time():
-                continue
+    for _round in range(2):
+        now = time.time()
+        for orig_idx, k_str, client in clients:
+            if _KEY_COOLDOWNS.get(k_str, 0) > now:
+                continue  # skip cooling key directly without stalling!
             for attempt in range(2):
                 try:
                     resp = client.models.generate_content(
-                        model=cfg["GEMINI_MODEL"] or "gemini-3.6-flash",
+                        model=cfg.get("GEMINI_MODEL") or "gemini-3.6-flash",
                         contents=prompt,
                         config=types.GenerateContentConfig(
                             response_mime_type="application/json",
@@ -483,92 +520,89 @@ def _call_json(cfg, prompt, note_fn=None):
                 except Exception as e:
                     last = str(e)[:300]
                     if "429" in str(e):
-                        waits[i] = time.time() + (_retry_delay(str(e)) or 45)
+                        delay = max(_retry_delay(str(e)), 45)
+                        _KEY_COOLDOWNS[k_str] = time.time() + delay
                         if note_fn and len(clients) > 1:
-                            note_fn("Key %d of %d hit Google's free limit — "
-                                    "switching key..." % (i + 1, len(clients)))
-                        break  # next key, don't waste retries on 429
+                            note_fn("Google key %d hit free limit — switching to ready key..."
+                                    % (orig_idx + 1))
+                        break
                     if attempt < 1 and _is_retryable(str(e)):
                         time.sleep(2)
                         continue
                     break
-        # all keys cooling? wait once for the earliest, then try again
-        if waits and all(w > time.time() for w in waits.values()) \
-                and not tried_wait:
-            wait = min(max(int(w - time.time()) + 1, 1) for w in waits.values())
-            wait = min(wait, 90)
+        now = time.time()
+        active_cooldowns = [_KEY_COOLDOWNS[k] for _, k, _ in clients if _KEY_COOLDOWNS.get(k, 0) > now]
+        if active_cooldowns and not tried_wait:
+            wait = min(max(int(min(active_cooldowns) - now) + 1, 1), 45)
             if note_fn:
-                note_fn("Google's free limit is busy — waiting %ds, "
-                        "then retrying..." % wait)
+                note_fn("Google's free limit is busy — waiting %ds, then retrying..." % wait)
             time.sleep(wait)
             tried_wait = True
             continue
         break
-    if waits:
+    if active_cooldowns:
         return None, ("Google's free daily limit is reached on all %d key(s). "
-                      "Add another free key in Setup (doubles it), or wait a "
-                      "while / tomorrow — nothing was changed in Word."
-                      % len(clients))
+                      "Add another free key in Keys (doubles it), or wait a "
+                      "while — nothing was changed in Word." % len(clients))
     return None, "Helper call failed: " + last
 
 
 def _call_text(cfg, prompt, max_chars=4000, note_fn=None):
-    """Free-text generation: Groq first, same rotation policy.
-    Returns (text, error)."""
+    """Free-text generation: Groq first with multi-model fallback, smart ready-first Gemini rotation."""
     if cfg.get("GROQ_KEYS"):
         text, tag = _groq_call(cfg, "You write text for Word documents.",
                                prompt, False, note_fn)
         if tag is None and text:
             return text.strip()[:max_chars], None
-    clients = _clients(cfg)
+    clients = _get_ordered_clients(cfg)
     if not clients:
         if cfg.get("GROQ_KEYS"):
             return None, ("Free engine failed right now — try again in a "
                           "minute. Nothing was changed in Word.")
-        return None, ("No free key saved yet. Open Setup: add a Groq key "
+        return None, ("No free key saved yet. Open Keys: add a Groq key "
                       "(recommended) or a Gemini key, paste, Save.")
     last = "unknown"
-    waits = {}
     tried_wait = False
-    for _round in range(3):
-        for i, client in enumerate(clients):
-            if waits.get(i, 0) > time.time():
-                continue
+    for _round in range(2):
+        now = time.time()
+        for orig_idx, k_str, client in clients:
+            if _KEY_COOLDOWNS.get(k_str, 0) > now:
+                continue  # skip cooling key directly!
             for attempt in range(2):
                 try:
                     resp = client.models.generate_content(
-                        model=cfg["GEMINI_MODEL"] or "gemini-3.6-flash",
+                        model=cfg.get("GEMINI_MODEL") or "gemini-3.6-flash",
                         contents=prompt,
                     )
                     return (resp.text or "").strip()[:max_chars], None
                 except Exception as e:
                     last = str(e)[:300]
                     if "429" in str(e):
-                        waits[i] = time.time() + (_retry_delay(str(e)) or 45)
+                        delay = max(_retry_delay(str(e)), 45)
+                        _KEY_COOLDOWNS[k_str] = time.time() + delay
                         if note_fn and len(clients) > 1:
-                            note_fn("Key %d of %d hit Google's free limit — "
-                                    "switching key..." % (i + 1, len(clients)))
+                            note_fn("Google key %d hit free limit — switching to ready key..."
+                                    % (orig_idx + 1))
                         break
                     if attempt < 1 and _is_retryable(str(e)):
                         time.sleep(2)
                         continue
                     break
-        if waits and all(w > time.time() for w in waits.values()) \
-                and not tried_wait:
-            wait = min(max(int(w - time.time()) + 1, 1) for w in waits.values())
-            wait = min(wait, 90)
+        now = time.time()
+        active_cooldowns = [_KEY_COOLDOWNS[k] for _, k, _ in clients if _KEY_COOLDOWNS.get(k, 0) > now]
+        if active_cooldowns and not tried_wait:
+            wait = min(max(int(min(active_cooldowns) - now) + 1, 1), 45)
             if note_fn:
-                note_fn("Google's free limit is busy — waiting %ds, "
-                        "then retrying..." % wait)
+                note_fn("Google's free limit is busy — waiting %ds, then retrying..." % wait)
             time.sleep(wait)
             tried_wait = True
             continue
         break
-    if waits:
+    if active_cooldowns:
         return None, ("Google's free daily limit is reached on all %d key(s). "
-                      "Add another free key in Setup (doubles it), or wait a "
-                      "while / tomorrow — nothing was changed in Word."
-                      % len(clients))
+                      "Add another free key in Keys (doubles it), or wait a "
+                      "while — nothing was changed in Word." % len(clients))
+    return None, "Helper call failed: " + last
     return None, "Helper call failed: " + last
 
 

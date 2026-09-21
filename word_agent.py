@@ -993,10 +993,13 @@ def add_watermark(text="CONFIDENTIAL"):
         app, doc = _bind()
         info = _doc_id(doc)
         text = (text or "CONFIDENTIAL").strip().upper()
+        try:
+            app.ActiveWindow.View.Type = 3  # wdPrintView = 3
+        except Exception:
+            pass
         for sec in doc.Sections:
             header = sec.Headers(1)  # 1 = wdHeaderFooterPrimary
             shape = header.Shapes.AddTextEffect(0, text, "Calibri", 54, 0, 0, 0, 0)
-            shape.Select()
             shape.Name = "AssistantWatermark"
             shape.Rotation = 315
             shape.Fill.Visible = -1  # msoTrue
