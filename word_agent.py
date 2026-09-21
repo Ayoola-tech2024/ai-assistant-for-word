@@ -5,6 +5,7 @@ returns {"ok": False, "need": "close-dialog", ...} instead of crashing.
 """
 import pythoncom
 import pywintypes
+import time
 import win32com.client
 
 BUSY_HRESULT = 0x80010001  # Call was rejected by callee (modal dialog open)
@@ -904,6 +905,123 @@ def add_watermark(text="CONFIDENTIAL"):
         return {"ok": False, "action": "add_watermark", "error": str(e)[:300]}
 
 
+def insert_chart(kind="bar", title="Chart", labels="[]", values="[]", place="end"):
+    """Insert a professional matplotlib chart (bar, line, or pie) into Word."""
+    import json
+    import os
+    import tempfile
+    try:
+        app, doc = _bind()
+        info = _doc_id(doc)
+        if isinstance(labels, str):
+            try:
+                labels = json.loads(labels)
+            except Exception:
+                labels = [x.strip() for x in labels.split(",") if x.strip()]
+        if isinstance(values, str):
+            try:
+                values = json.loads(values)
+            except Exception:
+                values = [float(x.strip()) for x in values.split(",") if x.strip()]
+        values = [float(v) for v in values]
+        if not labels or not values or len(labels) != len(values):
+            return {"ok": False, "action": "insert_chart",
+                    "error": "Labels and numerical values must be provided and have matching length."}
+
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(6, 3.5), dpi=150)
+        kind = (kind or "bar").strip().lower()
+        if kind == "pie":
+            ax.pie(values, labels=labels, autopct="%1.1f%%", startangle=140)
+        elif kind == "line":
+            ax.plot(labels, values, marker="o", color="#2b579a", linewidth=2.5, markersize=6)
+            ax.grid(True, linestyle="--", alpha=0.5)
+        else:  # bar
+            colors = ["#2b579a", "#418ab3", "#5ba4cf", "#7fc0eb", "#a6dcef"]
+            bar_colors = [colors[i % len(colors)] for i in range(len(labels))]
+            ax.bar(labels, values, color=bar_colors, edgecolor="#1f3f70", width=0.55)
+            ax.grid(axis="y", linestyle="--", alpha=0.4)
+
+        if title:
+            ax.set_title(str(title), fontsize=12, fontweight="bold", pad=12)
+        plt.tight_layout()
+
+        chart_path = os.path.join(tempfile.gettempdir(), "word_chart_%d.png" % int(time.time()))
+        plt.savefig(chart_path)
+        plt.close(fig)
+
+        if (place or "end") == "cursor":
+            try:
+                rng = app.Selection.Range
+            except Exception:
+                rng = doc.Content
+                rng.Collapse(0)
+        else:
+            rng = doc.Content
+            rng.Collapse(0)
+            rng.Text = "\r"
+            rng.Collapse(0)
+
+        rng.InlineShapes.AddPicture(FileName=chart_path, LinkToFile=False, SaveWithDocument=True)
+        return {"ok": True, "action": "insert_chart", "doc": info,
+                "report": "Inserted %s chart: '%s'." % (kind, title or "Chart")}
+    except pywintypes.com_error as e:
+        if _is_busy(e):
+            return _busy_result("insert_chart")
+        return {"ok": False, "action": "insert_chart", "error": str(e)[:300]}
+    except Exception as e:
+        return {"ok": False, "action": "insert_chart", "error": str(e)[:300]}
+
+
+def insert_image(prompt, place="end"):
+    """Generate and insert a free AI illustration or image into Word via Pollinations.ai."""
+    import os
+    import tempfile
+    import requests
+    try:
+        app, doc = _bind()
+        info = _doc_id(doc)
+        prompt = (prompt or "").strip()
+        if not prompt:
+            return {"ok": False, "action": "insert_image", "error": "Image prompt cannot be empty."}
+
+        encoded = requests.utils.quote(prompt)
+        url = "https://image.pollinations.ai/prompt/%s?width=800&height=500&nologo=true" % encoded
+        r = requests.get(url, timeout=30)
+        if r.status_code != 200 or len(r.content) < 1000:
+            return {"ok": False, "action": "insert_image",
+                    "error": "Failed to generate image from public provider (status %s)." % r.status_code}
+
+        img_path = os.path.join(tempfile.gettempdir(), "word_img_%d.jpg" % int(time.time()))
+        with open(img_path, "wb") as f:
+            f.write(r.content)
+
+        if (place or "end") == "cursor":
+            try:
+                rng = app.Selection.Range
+            except Exception:
+                rng = doc.Content
+                rng.Collapse(0)
+        else:
+            rng = doc.Content
+            rng.Collapse(0)
+            rng.Text = "\r"
+            rng.Collapse(0)
+
+        rng.InlineShapes.AddPicture(FileName=img_path, LinkToFile=False, SaveWithDocument=True)
+        return {"ok": True, "action": "insert_image", "doc": info,
+                "report": "Inserted image: '%s'." % prompt[:80]}
+    except pywintypes.com_error as e:
+        if _is_busy(e):
+            return _busy_result("insert_image")
+        return {"ok": False, "action": "insert_image", "error": str(e)[:300]}
+    except Exception as e:
+        return {"ok": False, "action": "insert_image", "error": str(e)[:300]}
+
+
 TOOLS = {
     "add_footer": add_footer,
     "replace_text": replace_text,
@@ -934,5 +1052,7 @@ TOOLS = {
     "insert_toc": insert_toc,
     "insert_data_table": insert_data_table,
     "add_watermark": add_watermark,
+    "insert_chart": insert_chart,
+    "insert_image": insert_image,
 }
 

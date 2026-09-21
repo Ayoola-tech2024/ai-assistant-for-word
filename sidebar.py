@@ -17,7 +17,7 @@ import tempfile
 import threading
 import tkinter as tk
 import webbrowser
-from tkinter import ttk
+from tkinter import filedialog, ttk
 import win32gui
 
 import agent
@@ -65,6 +65,7 @@ class VoiceRecorder:
             return self.wav_path
         return None
 
+
 ARG_LABELS = {
     "add_footer": (("text", "Footer text"),),
     "replace_text": (("old", "Find this"), ("new", "Replace with")),
@@ -98,6 +99,8 @@ ARG_LABELS = {
     "add_comment": (("text", "Comment"), ("target", "Target phrase")),
     "insert_toc": (("place", "Position"),),
     "add_watermark": (("text", "Watermark text"),),
+    "insert_chart": (("kind", "Chart type"), ("title", "Title"), ("labels", "Labels"), ("values", "Values")),
+    "insert_image": (("prompt", "Illustration idea"),),
 }
 
 TOOL_NAMES = {
@@ -133,6 +136,8 @@ TOOL_NAMES = {
     "add_comment": "Add margin comment",
     "insert_toc": "Insert Table of Contents",
     "add_watermark": "Add watermark",
+    "insert_chart": "Insert data chart",
+    "insert_image": "Insert AI illustration",
 }
 
 
@@ -144,6 +149,7 @@ class Sidebar:
         root.attributes("-topmost", True)
         self.pending = None
         self.busy_action = None  # ("plan", cmd) or ("execute", plan)
+        self.attached_file = None
         self.recorder = VoiceRecorder()
         self._start_global_hotkey()
         cfg = agent.load_config()
@@ -181,7 +187,7 @@ class Sidebar:
                        "(one per line) — each adds more free daily use.",
                   font=("Segoe UI", 8)).pack()
         self.key_entry = tk.Text(self.setup_frame, height=4,
-                                 font=("Consolas", 9))
+                                  font=("Consolas", 9))
         self.key_entry.pack(fill="x")
         self.setup_msg = tk.StringVar()
         ttk.Label(self.setup_frame, textvariable=self.setup_msg,
@@ -220,17 +226,27 @@ class Sidebar:
             side="right", padx=(0, 2))
         ttk.Button(top, text="Templates", command=self._templates_popup).pack(
             side="right", padx=(0, 2))
+        ttk.Button(top, text="📎 File", command=self.attach_file).pack(
+            side="right", padx=(0, 2))
         ttk.Button(top, text="Keys", command=self._keys_popup).pack(
             side="right", padx=(0, 2))
+
+        # Attachment bar (hidden by default)
+        self.attach_frame = ttk.Frame(self.root, padding=(8, 2))
+        self.attach_var = tk.StringVar(value="")
+        ttk.Label(self.attach_frame, textvariable=self.attach_var,
+                  font=("Segoe UI", 8, "bold")).pack(side="left")
+        ttk.Button(self.attach_frame, text="✕", width=3,
+                   command=self.clear_attachment).pack(side="right")
 
         # Plain-English input
         mid = ttk.Frame(self.root, padding=(8, 0, 8, 0))
         mid.pack(fill="x")
         ttk.Label(mid, text="Tell Word what to do (plain English):").pack(
             anchor="w")
-        ttk.Label(mid, text='e.g. "write a leave request letter" or '
-                            '"review this document" or '
-                            '"turn on track changes"',
+        ttk.Label(mid, text='e.g. "insert a bar chart of sales" or '
+                            '"generate an image of a solar roof" or '
+                            '"summarise attached file"',
                   font=("Segoe UI", 8)).pack(anchor="w")
         self.cmd = tk.Text(mid, height=3, font=("Segoe UI", 11))
         self.cmd.pack(fill="x")
@@ -505,6 +521,27 @@ class Sidebar:
             self.root.after(0, self.doc_var.set, txt)
         self._run_bg(work)
 
+    def attach_file(self):
+        path = filedialog.askopenfilename(
+            title="Attach Reference File",
+            filetypes=[("Documents", "*.txt;*.md;*.pdf"), ("All Files", "*.*")])
+        if not path:
+            return
+        content, err = agent.read_file_context(path)
+        if err or not content:
+            self._say("Could not read file: " + str(err or "Empty file"))
+            return
+        self.attached_file = {"path": path, "name": os.path.basename(path), "content": content}
+        self.attach_var.set("📎 %s (%d chars loaded)" % (self.attached_file["name"], len(content)))
+        self.attach_frame.pack(fill="x", padx=8, pady=(0, 4))
+        self._say("Attached %s as reference context." % self.attached_file["name"])
+
+    def clear_attachment(self):
+        self.attached_file = None
+        self.attach_var.set("")
+        self.attach_frame.pack_forget()
+        self._say("Attachment removed.")
+
     def send(self):
         cmd = self.cmd.get("1.0", "end").strip()
         if not cmd:
@@ -517,16 +554,17 @@ class Sidebar:
         self.retry_btn.config(state="disabled")
         self._show_preview("Thinking...")
         self._say("> " + cmd)
-        self._run_bg(lambda: self._do_plan(cmd))
+        extra = self.attached_file["content"] if self.attached_file else None
+        self._run_bg(lambda: self._do_plan(cmd, extra))
 
-    def _do_plan(self, cmd):
-        out = agent.plan_action(cmd, self._note)
-        self.root.after(0, self._plan_done, cmd, out)
+    def _do_plan(self, cmd, extra=None):
+        out = agent.plan_action(cmd, self._note, extra_context=extra)
+        self.root.after(0, self._plan_done, cmd, out, extra)
 
-    def _plan_done(self, cmd, out):
+    def _plan_done(self, cmd, out, extra=None):
         self.send_btn.config(state="normal")
         if out.get("need") == "close-dialog":
-            self.busy_action = ("plan", cmd)
+            self.busy_action = ("plan", cmd, extra)
             self._show_preview("Word has a pop-up open (like Find or Save).\n"
                                "Close it in Word, then tap Try again.")
             self.retry_btn.config(state="normal")
@@ -607,13 +645,17 @@ class Sidebar:
     def retry(self):
         if not self.busy_action:
             return
-        kind, payload = self.busy_action
+        item = self.busy_action
         self.busy_action = None
         self.retry_btn.config(state="disabled")
+        kind = item[0]
         if kind == "plan":
+            payload = item[1]
+            extra = item[2] if len(item) > 2 else None
             self._show_preview("Trying again...")
-            self._run_bg(lambda: self._do_plan(payload))
+            self._run_bg(lambda: self._do_plan(payload, extra))
         else:
+            payload = item[1]
             self._show_preview("Trying again...")
             self._run_bg(lambda: self._do_execute(payload))
 

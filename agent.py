@@ -115,7 +115,7 @@ TOOLS = ["add_footer", "replace_text", "delete_para_containing",
          "make_list", "align_paras", "font_size", "font_color", "line_spacing",
          "set_orientation", "add_header", "add_page_numbers", "word_count",
          "export_pdf", "undo_last", "toggle_track_changes", "add_comment",
-         "insert_toc", "add_watermark"]
+         "insert_toc", "add_watermark", "insert_chart", "insert_image"]
 
 REQUIRED_ARGS = {
     "add_footer": ("text",),
@@ -150,6 +150,8 @@ REQUIRED_ARGS = {
     "add_comment": ("text",),
     "insert_toc": (),
     "add_watermark": ("text",),
+    "insert_chart": ("kind", "labels", "values"),
+    "insert_image": ("prompt",),
 }
 OPTIONAL_ARGS = {
     "draft": ("place",),
@@ -166,6 +168,8 @@ OPTIONAL_ARGS = {
     "toggle_track_changes": ("enabled",),
     "add_comment": ("target",),
     "insert_toc": ("place",),
+    "insert_chart": ("title", "place"),
+    "insert_image": ("place",),
 }
 
 RESPONSE_SCHEMA = {
@@ -181,6 +185,7 @@ RESPONSE_SCHEMA = {
                 "instruction": {"type": "STRING"},
                 "question": {"type": "STRING"},
                 "query": {"type": "STRING"},
+                "prompt": {"type": "STRING"},
                 "place": {"type": "STRING",
                           "enum": ["cursor", "end"]},
                 "style": {"type": "STRING"},
@@ -189,12 +194,14 @@ RESPONSE_SCHEMA = {
                 "rows": {"type": "STRING"},
                 "cols": {"type": "NUMBER"},
                 "headers": {"type": "STRING"},
+                "title": {"type": "STRING"},
+                "labels": {"type": "STRING"},
+                "values": {"type": "STRING"},
                 "size": {"type": "NUMBER"},
                 "steps": {"type": "NUMBER"},
                 "target": {"type": "STRING"},
                 "enabled": {"type": "STRING"},
-                "kind": {"type": "STRING",
-                         "enum": ["bullets", "numbers"]},
+                "kind": {"type": "STRING"},
                 "how": {"type": "STRING",
                          "enum": ["left", "center", "right", "justify"]},
                 "color": {"type": "STRING"},
@@ -243,6 +250,10 @@ SYSTEM = (
     "- set_orientation {orientation?=portrait}: portrait|landscape.\n"
     "- add_header {text}: header on every section.\n"
     "- add_page_numbers {}: 'Page X' in the footer.\n"
+    "Visuals & charts:\n"
+    "- insert_chart {kind, labels, values, title?, place?=end}: draw a chart in Word! "
+    "kind=bar|line|pie. labels=JSON array like [\"Q1\", \"Q2\"], values=JSON array like [10, 25].\n"
+    "- insert_image {prompt, place?=end}: generate and insert a free AI illustration or image.\n"
     "Copilot collaboration & review:\n"
     "- toggle_track_changes {enabled?=true}: turn Track Changes (redline mode) on/off.\n"
     "- add_comment {text, target?}: add a margin comment balloon to target text or highlight.\n"
@@ -257,8 +268,8 @@ SYSTEM = (
     "- ask {question}: answer questions about the document.\n"
     "- research {query, instruction}: search the internet and add findings.\n"
     "Rules: writing new content -> draft. Improving existing text -> refine. "
-    "Proofreading with margin notes -> review. Tables with data -> insert_data_table. "
-    "Redline revisions -> toggle_track_changes. Questions -> ask. "
+    "Charts -> insert_chart. Images -> insert_image. Tables with data -> insert_data_table. "
+    "Margin review notes -> review. Redline revisions -> toggle_track_changes. Questions -> ask. "
     "Never invent tools. Always fill required args."
 )
 
@@ -540,7 +551,35 @@ def _call_text(cfg, prompt, max_chars=4000, note_fn=None):
     return None, "Helper call failed: " + last
 
 
-def plan_action(user_text, note_fn=None):
+def read_file_context(filepath, max_chars=6000):
+    """Read reference text from PDF, text, or markdown file."""
+    import pathlib
+    p = pathlib.Path(filepath)
+    if not p.exists():
+        return None, "File does not exist: %s" % filepath
+    ext = p.suffix.lower()
+    try:
+        if ext == ".pdf":
+            import pypdf
+            reader = pypdf.PdfReader(str(p))
+            pages = []
+            for idx, page in enumerate(reader.pages[:10]):
+                txt = page.extract_text() or ""
+                if txt.strip():
+                    pages.append("--- Page %d ---\n%s" % (idx + 1, txt.strip()))
+            full = "\n\n".join(pages)
+            return full[:max_chars], None
+        else:
+            try:
+                txt = p.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                txt = p.read_text(encoding="latin-1")
+            return txt[:max_chars], None
+    except Exception as e:
+        return None, "Failed to read reference file: " + str(e)[:150]
+
+
+def plan_action(user_text, note_fn=None, extra_context=None):
     """Plan only. Returns plan dict, never touches the document."""
     user_text = (user_text or "").strip()
     if not user_text:
@@ -554,10 +593,11 @@ def plan_action(user_text, note_fn=None):
     ctx = word_agent.get_context()
     if not ctx.get("ok"):
         return ctx  # e.g. Word busy / no document — pass through
+    ref_txt = ("\n\nAttached Reference File Content:\n" + str(extra_context).strip()[:4000]) if extra_context else ""
     prompt = (
         SYSTEM
-        + "\nSelected-or-open text scope: %s\nText:\n%s\n\nUser request: %s"
-        % (ctx.get("scope"), ctx.get("text", ""), user_text)
+        + "\nSelected-or-open text scope: %s\nText:\n%s%s\n\nUser request: %s"
+        % (ctx.get("scope"), ctx.get("text", ""), ref_txt, user_text)
     )
     plan, err = _call_json(cfg, prompt, note_fn)
     if err:
