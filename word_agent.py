@@ -728,6 +728,182 @@ def undo_last(steps=1):
         return {"ok": False, "action": "undo_last", "error": str(e)[:300]}
 
 
+def toggle_track_changes(enabled=True):
+    """Enable or disable Word Track Changes (redline revision mode)."""
+    try:
+        app, doc = _bind()
+        info = _doc_id(doc)
+        if isinstance(enabled, str):
+            enabled = enabled.lower() not in ("false", "off", "0", "disable")
+        doc.TrackRevisions = bool(enabled)
+        status = "enabled (redlines visible)" if doc.TrackRevisions else "disabled"
+        return {"ok": True, "action": "toggle_track_changes", "doc": info,
+                "report": "Track Changes is now %s." % status}
+    except pywintypes.com_error as e:
+        if _is_busy(e):
+            return _busy_result("toggle_track_changes")
+        return {"ok": False, "action": "toggle_track_changes", "error": str(e)[:300]}
+    except Exception as e:
+        return {"ok": False, "action": "toggle_track_changes", "error": str(e)[:300]}
+
+
+def add_comment(text, target=None):
+    """Add a margin comment to highlighted text, specific target text, or cursor."""
+    try:
+        app, doc = _bind()
+        info = _doc_id(doc)
+        text = (text or "").strip()
+        if not text:
+            return {"ok": False, "action": "add_comment", "error": "Comment text cannot be empty."}
+        rng = None
+        target_str = (target or "").strip()
+        if target_str:
+            needle = target_str.lower()
+            for p in doc.Paragraphs:
+                t = (p.Range.Text or "").lower()
+                idx = t.find(needle)
+                if idx != -1:
+                    r = p.Range.Duplicate
+                    r.Start = p.Range.Start + idx
+                    r.End = r.Start + len(target_str)
+                    rng = r
+                    break
+        if rng is None:
+            sel = app.Selection.Range.Text or ""
+            if len(sel.strip()) > 1:
+                rng = app.Selection.Range
+            else:
+                rng = app.Selection.Range
+        doc.Comments.Add(Range=rng, Text=text)
+        preview = text[:80] + ("..." if len(text) > 80 else "")
+        return {"ok": True, "action": "add_comment", "doc": info,
+                "report": "Margin comment added: '%s'" % preview}
+    except pywintypes.com_error as e:
+        if _is_busy(e):
+            return _busy_result("add_comment")
+        return {"ok": False, "action": "add_comment", "error": str(e)[:300]}
+    except Exception as e:
+        return {"ok": False, "action": "add_comment", "error": str(e)[:300]}
+
+
+def insert_toc(place="cursor"):
+    """Insert a native clickable Table of Contents based on Headings 1-3."""
+    try:
+        app, doc = _bind()
+        info = _doc_id(doc)
+        p = (place or "cursor").strip().lower()
+        if p in ("start", "top"):
+            rng = doc.Range(0, 0)
+        elif p == "cursor":
+            try:
+                rng = app.Selection.Range
+            except Exception:
+                rng = doc.Range(0, 0)
+        else:
+            rng = doc.Content
+            rng.Collapse(0)  # 0 = wdCollapseEnd
+        doc.TablesOfContents.Add(Range=rng, UseHeadingStyles=True,
+                                 UpperHeadingLevel=1, LowerHeadingLevel=3)
+        return {"ok": True, "action": "insert_toc", "doc": info,
+                "report": "Table of Contents inserted."}
+    except pywintypes.com_error as e:
+        if _is_busy(e):
+            return _busy_result("insert_toc")
+        return {"ok": False, "action": "insert_toc", "error": str(e)[:300]}
+    except Exception as e:
+        return {"ok": False, "action": "insert_toc", "error": str(e)[:300]}
+
+
+def insert_data_table(headers, rows, place="end", style="Grid Table 4 - Accent 1"):
+    """Insert a table populated with headers and row data, styled professionally."""
+    import json
+    try:
+        app, doc = _bind()
+        info = _doc_id(doc)
+        if isinstance(headers, str):
+            try:
+                headers = json.loads(headers)
+            except Exception:
+                headers = [h.strip() for h in headers.split(",") if h.strip()]
+        if isinstance(rows, str):
+            try:
+                rows = json.loads(rows)
+            except Exception:
+                rows = [[c.strip() for c in line.split(",")]
+                        for line in rows.splitlines() if line.strip()]
+        if not headers or not rows:
+            return {"ok": False, "action": "insert_data_table",
+                    "error": "Both headers and rows are required."}
+        num_cols = len(headers)
+        num_rows = len(rows) + 1  # 1 header row + data rows
+        if (place or "end") == "cursor":
+            try:
+                rng = app.Selection.Range
+            except Exception:
+                rng = doc.Content
+                rng.Collapse(0)
+        else:
+            rng = doc.Content
+            rng.Collapse(0)
+            rng.Text = "\r"
+            rng.Collapse(0)
+        tbl = doc.Tables.Add(rng, num_rows, num_cols)
+        try:
+            tbl.Style = style
+        except Exception:
+            try:
+                tbl.Style = "Table Grid"
+            except Exception:
+                pass
+        # Populate headers
+        for c, h in enumerate(headers, 1):
+            cell = tbl.Cell(1, c)
+            cell.Range.Text = str(h)
+            cell.Range.Bold = True
+        # Populate rows
+        for r_idx, row in enumerate(rows, 2):
+            for c_idx, val in enumerate(row[:num_cols], 1):
+                tbl.Cell(r_idx, c_idx).Range.Text = str(val)
+        return {"ok": True, "action": "insert_data_table", "doc": info,
+                "report": "Inserted a populated %dx%d table." % (num_rows, num_cols)}
+    except pywintypes.com_error as e:
+        if _is_busy(e):
+            return _busy_result("insert_data_table")
+        return {"ok": False, "action": "insert_data_table", "error": str(e)[:300]}
+    except Exception as e:
+        return {"ok": False, "action": "insert_data_table", "error": str(e)[:300]}
+
+
+def add_watermark(text="CONFIDENTIAL"):
+    """Add a diagonal semi-transparent watermark across all sections."""
+    try:
+        app, doc = _bind()
+        info = _doc_id(doc)
+        text = (text or "CONFIDENTIAL").strip().upper()
+        for sec in doc.Sections:
+            header = sec.Headers(1)  # 1 = wdHeaderFooterPrimary
+            shape = header.Shapes.AddTextEffect(0, text, "Calibri", 54, 0, 0, 0, 0)
+            shape.Select()
+            shape.Name = "AssistantWatermark"
+            shape.Rotation = 315
+            shape.Fill.Visible = -1  # msoTrue
+            shape.Fill.Solid()
+            shape.Fill.ForeColor.RGB = 12632256  # light gray
+            shape.Line.Visible = 0  # msoFalse
+            shape.RelativeHorizontalPosition = 0
+            shape.RelativeVerticalPosition = 0
+            shape.Left = -999995  # wdShapeCenter
+            shape.Top = -999995  # wdShapeCenter
+        return {"ok": True, "action": "add_watermark", "doc": info,
+                "report": "Watermark '%s' added across all sections." % text}
+    except pywintypes.com_error as e:
+        if _is_busy(e):
+            return _busy_result("add_watermark")
+        return {"ok": False, "action": "add_watermark", "error": str(e)[:300]}
+    except Exception as e:
+        return {"ok": False, "action": "add_watermark", "error": str(e)[:300]}
+
+
 TOOLS = {
     "add_footer": add_footer,
     "replace_text": replace_text,
@@ -753,4 +929,10 @@ TOOLS = {
     "word_count": word_count,
     "export_pdf": export_pdf,
     "undo_last": undo_last,
+    "toggle_track_changes": toggle_track_changes,
+    "add_comment": add_comment,
+    "insert_toc": insert_toc,
+    "insert_data_table": insert_data_table,
+    "add_watermark": add_watermark,
 }
+

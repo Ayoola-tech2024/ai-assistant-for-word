@@ -70,6 +70,14 @@ Just write naturally. Name the scope — **this highlighted text**, **the first 
 - *"Insert a 3x4 table"* / *"Add bullets"* / *"Make it landscape"*
 - *"Add page numbers"* / *"Set footer Confidential"*
 
+**Review & Copilot Collaboration**
+- *"Turn on track changes"* / *"Disable revisions"*
+- *"Add a margin comment saying check this clause"*
+- *"Review this document and leave comments on tone and clarity"*
+- *"Insert a table of contents"*
+- *"Add a DRAFT watermark"*
+- *"Create a competitor comparison table comparing Notion, Obsidian, and Word"*
+
 **Find & navigate**
 - *"Find the word refund"* — reports count and pages, jumps to the match
 - *"Go to page 3"* / *"Delete page 2"*
@@ -79,19 +87,22 @@ Just write naturally. Name the scope — **this highlighted text**, **the first 
 
 ---
 
-## Capabilities (26 tools)
+## Capabilities (31 tools)
 
 **Write & Research**
 `draft` — compose letters, paragraphs, lists · `research` — internet research inserted into the doc · `ask` — Q&A and summaries (document unchanged)
 
+**Copilot Review & Collaboration**
+`toggle_track_changes` (redline revisions) · `add_comment` (margin balloon comments) · `review` (automated document review with multi-comment suggestions) · `insert_toc` (hyperlinked Table of Contents) · `add_watermark` (diagonal section watermark)
+
 **Edit**
 `replace_text` · `delete_para_containing` · `delete_page` · `refine` (grammar/tone) · `set_full_text` · `insert_at_end` · `insert_at_cursor` · `undo_last`
 
-**Format**
-`format_text` (underline/bold/italic, page-scoped) · `font_size` · `font_color` · `align_paras` · `line_spacing` · `make_list` (bullets/numbers)
+**Format & Tables**
+`insert_data_table` (populated with data & styles) · `insert_table` · `format_text` (underline/bold/italic, page-scoped) · `font_size` · `font_color` · `align_paras` · `line_spacing` · `make_list` (bullets/numbers)
 
 **Structure**
-`apply_heading` (Heading 1–3) · `insert_table` · `add_header` · `add_footer` · `add_page_numbers` · `set_orientation`
+`apply_heading` (Heading 1–3) · `add_header` · `add_footer` · `add_page_numbers` · `set_orientation`
 
 **Find & Reports**
 `find_text` (counts, pages, jump-to-match) · `select_text` · `go_to_page` · `word_count` · `export_pdf`

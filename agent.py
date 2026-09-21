@@ -109,12 +109,13 @@ def save_api_key(key, kind="gemini"):
 
 
 TOOLS = ["add_footer", "replace_text", "delete_para_containing",
-         "insert_at_end", "draft", "refine", "ask", "research",
+         "insert_at_end", "draft", "refine", "ask", "research", "review",
          "format_text", "find_text", "select_text", "go_to_page",
-         "delete_page", "apply_heading", "insert_table", "make_list",
-         "align_paras", "font_size", "font_color", "line_spacing",
+         "delete_page", "apply_heading", "insert_table", "insert_data_table",
+         "make_list", "align_paras", "font_size", "font_color", "line_spacing",
          "set_orientation", "add_header", "add_page_numbers", "word_count",
-         "export_pdf", "undo_last"]
+         "export_pdf", "undo_last", "toggle_track_changes", "add_comment",
+         "insert_toc", "add_watermark"]
 
 REQUIRED_ARGS = {
     "add_footer": ("text",),
@@ -125,6 +126,7 @@ REQUIRED_ARGS = {
     "refine": ("instruction",),
     "ask": ("question",),
     "research": ("query",),
+    "review": ("instruction",),
     "format_text": ("style",),
     "find_text": ("text",),
     "select_text": ("text",),
@@ -132,6 +134,7 @@ REQUIRED_ARGS = {
     "delete_page": ("page",),
     "apply_heading": ("text",),
     "insert_table": ("rows", "cols"),
+    "insert_data_table": ("headers", "rows"),
     "make_list": (),
     "align_paras": (),
     "font_size": ("size",),
@@ -143,6 +146,10 @@ REQUIRED_ARGS = {
     "word_count": (),
     "export_pdf": (),
     "undo_last": (),
+    "toggle_track_changes": (),
+    "add_comment": ("text",),
+    "insert_toc": (),
+    "add_watermark": ("text",),
 }
 OPTIONAL_ARGS = {
     "draft": ("place",),
@@ -150,11 +157,15 @@ OPTIONAL_ARGS = {
     "format_text": ("page",),
     "apply_heading": ("level",),
     "insert_table": ("place",),
+    "insert_data_table": ("place", "style"),
     "make_list": ("kind",),
     "align_paras": ("how",),
     "line_spacing": ("spacing",),
     "set_orientation": ("orientation",),
     "undo_last": ("steps",),
+    "toggle_track_changes": ("enabled",),
+    "add_comment": ("target",),
+    "insert_toc": ("place",),
 }
 
 RESPONSE_SCHEMA = {
@@ -172,18 +183,20 @@ RESPONSE_SCHEMA = {
                 "query": {"type": "STRING"},
                 "place": {"type": "STRING",
                           "enum": ["cursor", "end"]},
-                "style": {"type": "STRING",
-                          "enum": ["underline", "bold", "italic"]},
+                "style": {"type": "STRING"},
                 "page": {"type": "NUMBER"},
                 "level": {"type": "NUMBER"},
-                "rows": {"type": "NUMBER"},
+                "rows": {"type": "STRING"},
                 "cols": {"type": "NUMBER"},
+                "headers": {"type": "STRING"},
                 "size": {"type": "NUMBER"},
                 "steps": {"type": "NUMBER"},
+                "target": {"type": "STRING"},
+                "enabled": {"type": "STRING"},
                 "kind": {"type": "STRING",
                          "enum": ["bullets", "numbers"]},
                 "how": {"type": "STRING",
-                        "enum": ["left", "center", "right", "justify"]},
+                         "enum": ["left", "center", "right", "justify"]},
                 "color": {"type": "STRING"},
                 "spacing": {"type": "STRING",
                             "enum": ["single", "1.5", "double"]},
@@ -213,11 +226,15 @@ SYSTEM = (
     "report.\n"
     "- select_text {text}: highlight a match in the Word window.\n"
     "- go_to_page {page}: jump the cursor ('go to page 2', 'first page' -> 1).\n"
-    "Structure:\n"
+    "Structure & layout:\n"
     "- delete_page {page}: delete a whole page by number.\n"
     "- apply_heading {text, level?=1}: make the paragraph containing text a "
     "Heading (level 1-3).\n"
     "- insert_table {rows, cols, place?=end}: empty table.\n"
+    "- insert_data_table {headers, rows, place?=end, style?}: table populated with data! "
+    "headers = JSON array like [\"Item\", \"Cost\"], rows = JSON 2D array like [[\"Apples\", \"$3\"]].\n"
+    "- insert_toc {place?=cursor}: insert a native clickable Table of Contents from headings.\n"
+    "- add_watermark {text}: diagonal watermark on all pages (e.g. 'DRAFT', 'CONFIDENTIAL').\n"
     "- make_list {kind?=bullets}: bullets|numbers on highlight or document.\n"
     "- align_paras {how?=left}: left|center|right|justify.\n"
     "- font_size {size}: number like 14, on highlight or document.\n"
@@ -226,28 +243,23 @@ SYSTEM = (
     "- set_orientation {orientation?=portrait}: portrait|landscape.\n"
     "- add_header {text}: header on every section.\n"
     "- add_page_numbers {}: 'Page X' in the footer.\n"
+    "Copilot collaboration & review:\n"
+    "- toggle_track_changes {enabled?=true}: turn Track Changes (redline mode) on/off.\n"
+    "- add_comment {text, target?}: add a margin comment balloon to target text or highlight.\n"
+    "- review {instruction}: review the document and add 1-5 margin comments with critique/suggestions.\n"
     "Reports & safety:\n"
     "- word_count {}: counts (nothing changes).\n"
     "- export_pdf {}: save a PDF next to the document.\n"
     "- undo_last {steps?=1}: undo recent change(s).\n"
     "Coworker jobs:\n"
-    "- draft {instruction, place=cursor|end}: WRITE new content from scratch "
-    "(full letters, paragraphs, lists). place=cursor if the user said "
-    "'here'/'at cursor', else end.\n"
-    "- refine {instruction}: IMPROVE the selected text (or whole document if "
-    "scope=document) — fix grammar, tone, clarity per instruction.\n"
-    "- ask {question}: answer about the document (summaries, explanations, "
-    "questions). NEVER use ask for writing or changing the document.\n"
-    "- research {query, instruction}: find CURRENT info from the internet and "
-    "add it to the document. query = short search terms, instruction = what "
-    "to write with the findings.\n"
+    "- draft {instruction, place=cursor|end}: WRITE new content from scratch.\n"
+    "- refine {instruction}: IMPROVE the selected text (or whole document) — grammar, tone, clarity.\n"
+    "- ask {question}: answer questions about the document.\n"
+    "- research {query, instruction}: search the internet and add findings.\n"
     "Rules: writing new content -> draft. Improving existing text -> refine. "
-    "Questions/summaries -> ask. Anything needing the internet -> research. "
-    "If unsure between draft and insert_at_end: user-supplied exact text -> "
-    "insert_at_end; content the AI must compose -> draft. "
-    "Explain mismatches in 'explain'. Never invent tools. "
-    "Example: {\"tool\": \"add_footer\", \"args\": {\"text\": \"Confidential\"}} "
-    "— always fill every required args field with the user's exact words."
+    "Proofreading with margin notes -> review. Tables with data -> insert_data_table. "
+    "Redline revisions -> toggle_track_changes. Questions -> ask. "
+    "Never invent tools. Always fill required args."
 )
 
 
@@ -256,17 +268,28 @@ def _validate(plan):
     if tool not in REQUIRED_ARGS:
         return {"ok": False, "error": "Unknown tool: %r" % (tool,)}
     args = plan.get("args") or plan.get("arguments") or {}
-    missing = [a for a in REQUIRED_ARGS[tool]
-               if not str(args.get(a, "")).strip()]
+    missing = []
+    clean = {}
+    for a in REQUIRED_ARGS[tool]:
+        val = args.get(a)
+        if val is None or (not isinstance(val, (list, dict)) and not str(val).strip()):
+            missing.append(a)
+        elif isinstance(val, (list, dict)):
+            clean[a] = json.dumps(val)
+        else:
+            clean[a] = str(val).strip()
     if missing:
         return {"ok": False,
                 "error": "Missing info for %s: %s"
                          % (tool, ", ".join(missing)),
                 "tool": tool, "args": args}
-    clean = {a: str(args[a]).strip() for a in REQUIRED_ARGS[tool]}
     for a in OPTIONAL_ARGS.get(tool, ()):
-        if str(args.get(a, "")).strip():
-            clean[a] = str(args[a]).strip()
+        val = args.get(a)
+        if val is not None:
+            if isinstance(val, (list, dict)):
+                clean[a] = json.dumps(val)
+            elif str(val).strip():
+                clean[a] = str(val).strip()
     if tool == "draft" and clean.get("place") not in ("cursor", "end"):
         clean["place"] = "end"
     if tool == "format_text":
@@ -643,6 +666,45 @@ def execute_action(plan, note_fn=None):
             if err:
                 return {"ok": False, "error": err}
             return word_agent.insert_at_end(brief)
+        if tool == "review":
+            if note_fn:
+                note_fn("Reviewing document and drafting margin comments...")
+            ctx = word_agent.get_context()
+            if not ctx.get("ok"):
+                return ctx
+            review_prompt = (
+                "You are an expert editor reviewing a Word document.\n"
+                "Document scope: %s\nText:\n%s\n\n"
+                "Review instruction: %s\n\n"
+                "Identify 1 to 4 specific locations that need improvement, correction, or clarification.\n"
+                "Return a JSON object with key 'comments', which is a list of objects:\n"
+                "{\"comments\": [{\"target\": \"exact short substring from document (4-8 words)\", \"comment\": \"constructive margin note\"}]}"
+                % (ctx.get("scope"), ctx.get("text", "")[:4000], args["instruction"])
+            )
+            raw, err = _call_text(cfg, review_prompt, note_fn=note_fn)
+            if err:
+                return {"ok": False, "error": err}
+            try:
+                c_text = raw.strip()
+                if "```json" in c_text:
+                    c_text = c_text.split("```json", 1)[1].split("```", 1)[0].strip()
+                elif "```" in c_text:
+                    c_text = c_text.split("```", 1)[1].split("```", 1)[0].strip()
+                items = json.loads(c_text).get("comments", [])
+            except Exception:
+                items = []
+            if not items:
+                return word_agent.add_comment(text="Review note: " + raw[:250])
+            added = 0
+            for item in items:
+                cmt = str(item.get("comment", "")).strip()
+                tgt = str(item.get("target", "")).strip()
+                if cmt:
+                    res = word_agent.add_comment(text=cmt, target=tgt if tgt else None)
+                    if res.get("ok"):
+                        added += 1
+            return {"ok": True, "action": "review", "doc": ctx.get("doc"),
+                    "report": "Added %d margin comment(s) to the document." % added}
         fn = word_agent.TOOLS.get(tool)
         if not fn:
             return {"ok": False, "error": "Unknown tool."}
