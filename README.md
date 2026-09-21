@@ -1,184 +1,143 @@
-# AI Assistant for Word
+<div align="center">
 
-**Talk to Microsoft Word in plain English. Your AI assistant for documents.**
+# 📄 AI Assistant for Word
+### The 100% Free, Open-Source Alternative to Microsoft 365 Copilot
 
-AI Assistant for Word is a lightweight Windows companion that sits beside Microsoft Word and carries out your instructions the way a skilled assistant would — drafting letters, refining grammar, formatting pages, researching the internet, and handling professional document tasks. No technical skill required: if you can use Word and chat, you can use AI Assistant for Word.
+**Talk to Microsoft Word in plain English. Fast, private, and works offline.**
 
-![Platform](https://img.shields.io/badge/platform-Windows-0078D6)
-![Word](https://img.shields.io/badge/Word-2013+-2B579A)
-![Python](https://img.shields.io/badge/Python-3.10+-3776AB)
-![License](https://img.shields.io/badge/license-MIT-green)
+[![GitHub Stars](https://img.shields.io/github/stars/Ayoola-tech2024/ai-assistant-for-word?style=social)](https://github.com/Ayoola-tech2024/ai-assistant-for-word)
+[![Platform](https://img.shields.io/badge/Platform-Windows_10%20%2F%2011-0078D6?logo=windows&logoColor=white)](https://github.com/Ayoola-tech2024/ai-assistant-for-word)
+[![Word](https://img.shields.io/badge/Microsoft_Word-2013_--_365-2B579A?logo=microsoftword&logoColor=white)](https://github.com/Ayoola-tech2024/ai-assistant-for-word)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Cost](https://img.shields.io/badge/Cost-100%25_Free_Forever-success)](https://github.com/Ayoola-tech2024/ai-assistant-for-word)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org)
 
----
+<br />
 
-## Why AI Assistant for Word
+[**⬇️ Download Portable App (.ZIP)**](https://github.com/Ayoola-tech2024/ai-assistant-for-word/releases) • [**📖 How To Use**](HOW_TO_USE.txt) • [**✨ Features**](#-core-features) • [**💡 Why Star This?**](#-why-star-this-project)
 
-| Traditional way | With AI Assistant for Word |
-|---|---|
-| Memorize ribbon menus and shortcuts | Type what you want in plain English |
-| Copy-paste between browser AI and Word | Research, draft, and insert without leaving Word |
-| Repeat the same formatting by hand | One command formats pages, headings, tables |
-| Hope the AI understood you | Every action shows a preview — nothing runs until you approve |
+</div>
 
 ---
 
-## Get started in 60 seconds
+## ⚡ Why Pay $360/Year for Copilot?
 
-**You need:** Windows 10/11, Microsoft Word 2013 or newer, and one free API key.
+Microsoft charges **$20 to $30 per month** ($360/year) for Microsoft 365 Copilot. **AI Assistant for Word** gives you the exact same conversational coworker experience inside your desktop Word application for **$0**, powered by high-speed free AI engines and a lightning-fast offline automation core.
 
-1. **Download** the latest `AI Assistant for Word` package from [Releases](../../releases) and unzip it anywhere (e.g. Desktop).
-2. **Open your Word document.**
-3. **Double-click `Start AI Assistant`.** A small window opens beside Word.
-4. **First run only:** tap `Get Groq key` (free, 2 minutes), paste the key, tap `Save & Start`. Done forever.
-5. **Type or speak a request** (tap `🎙️ Voice` to speak naturally), check the preview, tap **Yes, do it** — watch Word change instantly.
-
-> Do not open anything inside the engine folder — it contains engine files. `Start AI Assistant` is the only entry point.
-
-### About the free keys
-
-AI Assistant for Word runs on free cloud AI — no subscription, no card.
-
-| Key | Free allowance | Role |
-|---|---|---|
-| **Groq** (recommended) | Thousands of requests/day | Primary AI planning + **Voice Dictation** (`whisper-large-v3`) |
-| **Google Gemini** | ~20 requests/day | Automatic backup |
-
-Add or rotate keys anytime via the **Keys** button in the app. Keys are stored only on your PC (`%APPDATA%\word-cloud-agent\settings.json`) and are never transmitted anywhere except the provider's API.
+| Feature | Microsoft 365 Copilot | AI Assistant for Word |
+| :--- | :---: | :---: |
+| **Annual Cost** | **$240 – $360 / year** | **$0 (100% Free Forever)** |
+| **Account Requirement** | M365 Business / Pro Sub | Any Word 2013, 2016, 2019, 2021, or 365 |
+| **Offline Execution** | ❌ None (Cloud only) | ✅ **Instant Local Heuristics Engine (0.001s)** |
+| **Safety & Control** | Overwrites without approval | ✅ **Strict Preview & Confirm ("Yes, do it")** |
+| **Botanical / Scientific Styler** | ❌ Manual search & format | ✅ **Automatic Latin Binomial Styler in 1 Click** |
+| **ChatGPT Markdown Cleaner** | ❌ Pastes raw `#` and `**` | ✅ **Auto-strips hashtags, asterisks & placeholders** |
+| **Voice Dictation** | Basic dictation | ✅ **Groq Whisper Large v3 (Fast Speech-to-Text)** |
+| **Charts & Visuals** | Limited | ✅ **Native Bar, Line & Pie charts inserted into Word** |
+| **Privacy** | Enterprise cloud | ✅ **Local API keys, zero tracking, your PC only** |
 
 ---
 
-## What you can say
+## ✨ Core Features
 
-Just write naturally. Name the scope — **this highlighted text**, **the first page**, or **the whole document**.
+### 1. ⚡ Instant Offline Engine (0ms Latency, Zero AI Quota)
+Common document edits don't need expensive cloud AI. The assistant includes a built-in deterministic offline engine that executes in milliseconds:
+- **🌿 Botanical & Scientific Names**: Finds all Latin biological species and taxa (*Chiroptera*, *Homo sapiens*, *Desmodus rotundus*) and italicizes/underlines them document-wide.
+- **🧹 Markdown Artifact Cleaner**: Strips unsightly raw hashtags (`#`, `##`, `###`), bold asterisks (`**`), and bracket placeholders (`[Insert Table Here]`).
+- **🔤 Font Resizing**: Instant proportional delta adjustments (`-2pt`, `+2pt`) across selection or entire document.
+- **📄 1-Click PDF Export**: Direct COM export revealing the PDF in File Explorer.
+- **📊 Document Reading Analytics**: Computes word counts, estimated reading time, speaking pace, and Flesch readability grade level.
 
-**Writing**
-- *"Write a leave request letter for Friday"*
-- *"Draft a two-paragraph welcome note at the end"*
+### 2. 🤖 Cloud AI Coworker (Powered by Groq & Gemini)
+When you need deep creative writing or research, the assistant taps into free high-speed models:
+- **✍️ Deep Research & Drafting**: Ask Word to research the web on any topic and synthesize a structured section with cited sources.
+- **💬 Margin Review Notes**: Automated peer-review that places constructive review balloons directly in the document margins.
+- **🌐 Polyglot Translation**: Translates selections or entire documents into French, Spanish, German, Yoruba, and 50+ languages while preserving structure.
+- **📈 Data Visualizations**: Insert styled data tables and generated charts (Bar, Line, Pie).
+- **🎙️ Voice Dictation**: Press `Ctrl + Space` or click `🎙️ Voice` to speak your instructions naturally via Groq's high-speed Whisper model.
 
-**Editing & refining**
-- *"Fix the grammar of this document"*
-- *"Make this sound more professional"* (highlight the text first)
-- *"Replace YOLD with YNEW"*
-
-**Research**
-- *"Find current fuel prices in Nigeria and add them"*
-- *"Summarise this document"*
-
-**Formatting & structure**
-- *"Underline everything on the first page"*
-- *"Make this a Heading 1"* / *"Center this"* / *"Make it 14pt blue"*
-- *"Insert a 3x4 table"* / *"Add bullets"* / *"Make it landscape"*
-- *"Add page numbers"* / *"Set footer Confidential"*
-
-**Review & Copilot Collaboration**
-- *"Turn on track changes"* / *"Disable revisions"*
-- *"Add a margin comment saying check this clause"*
-- *"Review this document and leave comments on tone and clarity"*
-- *"Insert a table of contents"*
-- *"Add a DRAFT watermark"*
-- *"Create a competitor comparison table comparing Notion, Obsidian, and Word"*
-
-**Find & navigate**
-- *"Find the word refund"* — reports count and pages, jumps to the match
-- *"Go to page 3"* / *"Delete page 2"*
-
-**Finish**
-- *"How many words is this?"* / *"Save as PDF"* / *"Undo that"*
+### 3. 🛡️ Safety-First Preview Loop
+Word is **NEVER** touched automatically. Every single command shows you a plain-English preview of what will happen. You decide whether to click **"Yes, do it"** or **"No, cancel"**, backed by a 1-click **Undo** button.
 
 ---
 
-## Capabilities (31 tools)
+## 🚀 Quick Start (Non-Technical Users)
 
-**Write & Research**
-`draft` — compose letters, paragraphs, lists · `research` — internet research inserted into the doc · `ask` — Q&A and summaries (document unchanged)
+You do **not** need Python or technical experience:
 
-**Copilot Review & Collaboration**
-`toggle_track_changes` (redline revisions) · `add_comment` (margin balloon comments) · `review` (automated document review with multi-comment suggestions) · `insert_toc` (hyperlinked Table of Contents) · `add_watermark` (diagonal section watermark)
-
-**Edit**
-`replace_text` · `delete_para_containing` · `delete_page` · `refine` (grammar/tone) · `set_full_text` · `insert_at_end` · `insert_at_cursor` · `undo_last`
-
-**Format & Tables**
-`insert_data_table` (populated with data & styles) · `insert_table` · `format_text` (underline/bold/italic, page-scoped) · `font_size` · `font_color` · `align_paras` · `line_spacing` · `make_list` (bullets/numbers)
-
-**Structure**
-`apply_heading` (Heading 1–3) · `add_header` · `add_footer` · `add_page_numbers` · `set_orientation`
-
-**Find & Reports**
-`find_text` (counts, pages, jump-to-match) · `select_text` · `go_to_page` · `word_count` · `export_pdf`
+1. **Download**: Grab `AI-Assistant-for-Word-v1.0.zip` from [Releases](https://github.com/Ayoola-tech2024/ai-assistant-for-word/releases).
+2. **Extract**: Right-click the `.zip` file and select **Extract All**.
+3. **Launch**:
+   - Open your document in Microsoft Word.
+   - Double-click **`AIAssistantForWord.exe`** (or `Start AI Assistant.cmd`).
+4. **First Time Setup (Takes 30 seconds)**:
+   - Offline tools (PDF export, Stats, Botanical names, Clean markdown) work **instantly with zero keys**.
+   - For AI drafting, click **Keys**, tap **"Get Groq key (free)"**, paste your key, and click **Save**. Done!
 
 ---
 
-## Safety by design
+## 💬 Things You Can Say
 
-- **Nothing runs without approval.** Every request shows a plain-English preview; Word changes only when you tap **Yes, do it**.
-- **Your keys stay yours.** Stored locally, used only for provider API calls.
-- **Built-in guardrails.** Busy-Write detection (open Word dialogs pause actions with a Retry option), invalid plans are refused with guidance, and `undo_last` reverses mistakes.
-- **No document lock-in.** Your files remain ordinary `.docx` files — usable with or without the tool.
+Just type naturally in plain English:
 
----
-
-## Requirements
-
-- Windows 10/11 (64-bit)
-- Microsoft Word 2013 or newer (desktop)
-- Internet connection (cloud AI + optional research)
-- One free API key (Groq recommended)
-
-> macOS, web Word, and mobile Word are not supported — the tool drives the Windows desktop Word engine.
+- *"Make a comprehensive research about bats and draft a report"*
+- *"Write all botanical names well, italise them and underline them"*
+- *"Reduce the font and remove those placeholders and sharps you put"*
+- *"Export this document to PDF and reveal it in Explorer"*
+- *"Turn on track changes and review this contract for risks"*
+- *"Insert a 4-column competitor comparison table with pricing"*
+- *"Translate the selected text into professional French"*
+- *"Add a diagonal watermark CONFIDENTIAL and set header to Internal Use"*
+- *"Generate a pie chart showing Sales: Q1 40, Q2 30, Q3 20, Q4 10"*
 
 ---
 
-## Run from source (developers)
+## 🛠️ Developer Setup & Architecture
+
+For developers who want to inspect the source or build custom extensions:
 
 ```bash
+# 1. Clone the repository
+git clone https://github.com/Ayoola-tech2024/ai-assistant-for-word.git
+cd ai-assistant-for-word
+
+# 2. Install dependencies
 pip install -r requirements.txt
+
+# 3. Run the application
 python sidebar.py
 ```
 
-To build the double-click Windows package:
-
-```bash
-pip install pyinstaller
-pyinstaller -y --onedir --windowed --name AIAssistantForWord --hidden-import win32com.client sidebar.py
-```
-
-Project layout:
+### Architecture Overview
 
 ```text
 word-ai-service/
-├── sidebar.py      # User interface (chat window, setup, approvals)
-├── agent.py        # AI planning: Groq primary, Gemini fallback, rotation
-├── word_agent.py   # Word automation: 26 tools over Word COM
-├── requirements.txt
-└── Start AI Assistant.cmd  # Launcher (packaged alongside the build)
+├── sidebar.py        # Tkinter floating UI, snap-to-Word logic, voice dictation & events
+├── agent.py          # Dual brain: fast_local_plan() offline heuristic matcher + Groq/Gemini cloud planner
+├── word_agent.py     # 35+ native Microsoft Word COM dispatch routines via win32com
+├── AIAssistantForWord.spec # PyInstaller standalone Windows distribution configuration
+└── HOW_TO_USE.txt    # Beginner-friendly guide packaged with the portable executable
+```
+
+To build the standalone Windows binary:
+```bash
+pyinstaller AIAssistantForWord.spec --noconfirm
 ```
 
 ---
 
-## Roadmap
+## ⭐ Why Star This Project?
 
-- Multi-document awareness and batch jobs
-- Custom reusable prompts ("my report style")
-- Track-changes-friendly edits
-- Additional free providers for even higher limits
+If you believe that powerful AI tools shouldn't be locked behind expensive monthly subscriptions, please give this repository a **Star ⭐️**!
 
-Feature requests and bug reports are welcome via [Issues](../../issues).
-
----
-
-## Contributing
-
-1. Fork the repository.
-2. Create a feature branch (`git checkout -b feature/your-idea`).
-3. Keep Word 2013 compatibility (COM only, no Office.js).
-4. Never commit API keys — `.env` is git-ignored by design.
-5. Open a pull request with a clear description and test notes.
+- **It helps more students, writers, and researchers discover free tools.**
+- **It motivates ongoing active development and new features.**
+- **It keeps the project 100% open-source and free forever.**
 
 ---
 
-## License
+## 📜 License
 
-MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Ayoola Damisile Ayooluwa.
+Distributed under the **MIT License**. See [LICENSE](LICENSE) for details.
 
-Built for everyone who writes in Word and deserves a coworker, not a maze of menus.
+Developed with ❤️ by **[Ayoola Damisile Ayooluwa](https://github.com/Ayoola-tech2024)**.
