@@ -1,0 +1,106 @@
+================================================================================
+                    AI ASSISTANT FOR MICROSOFT WORD
+               Your Free, Smart AI Coworker Inside Word
+================================================================================
+
+Welcome! This assistant lives right beside Microsoft Word to help you write,
+format, clean, research, and edit documents in plain English.
+
+No technical skills, coding, or Python knowledge needed.
+
+
+--------------------------------------------------------------------------------
+1. QUICK START (HOW TO RUN)
+--------------------------------------------------------------------------------
+1. Open your document in Microsoft Word (e.g. Document1 or any .docx file).
+2. Double-click "Start AI Assistant.cmd" OR "AIAssistantForWord.exe".
+3. The Assistant window will pop up right beside your Word document!
+4. Type what you want in plain English, click "Send", review the preview,
+   and click "Yes, do it" — watch Word change instantly!
+
+
+--------------------------------------------------------------------------------
+2. SAFETY FIRST: YOU ARE ALWAYS IN CONTROL
+--------------------------------------------------------------------------------
+* Word is NEVER touched automatically.
+* Every change is first shown to you in the preview box.
+* You decide: click "Yes, do it" to apply, or "No, cancel" to discard.
+* Made a mistake? Click the "Undo" button anytime to revert the last change.
+
+
+--------------------------------------------------------------------------------
+3. INSTANT OFFLINE TOOLS (NO INTERNET OR SETUP NEEDED!)
+--------------------------------------------------------------------------------
+These features run locally on your PC in milliseconds with 0 internet needed:
+
+* 🌿 Scientific & Botanical Names:
+  Type: "italicise botanical names and underline them"
+  -> Automatically finds Latin binomial species and biological families 
+     (e.g., Chiroptera, Homo sapiens, Desmodus rotundus) and styles them.
+
+* 🧹 Clean Markdown & Placeholders:
+  Type: "clean markdown and remove sharps and placeholders"
+  -> Strips raw hashtags (#, ##), bold asterisks (**), and [Insert ...] tags.
+
+* 🔤 Font Resizing & Formatting:
+  Type: "reduce font size" OR "set font size to 12" OR "make text bigger"
+
+* 📄 1-Click PDF Export:
+  Click the "📄 PDF" button or type "save as pdf" to convert your Word document
+  to a clean PDF and reveal it in Windows File Explorer.
+
+* 📊 Reading Metrics & Stats:
+  Click the "📊 Stats" button to see word counts, reading time, speaking pace,
+  and readability grade level.
+
+* 📑 Native Table of Contents:
+  Type: "insert table of contents" to add a native clickable Word TOC.
+
+* 🏷️ Watermarks:
+  Type: "add watermark CONFIDENTIAL" or "add watermark DRAFT".
+
+* 📐 Alignment & Layout:
+  Type: "center align", "justify text", "switch to landscape", "double space".
+
+
+--------------------------------------------------------------------------------
+4. AI WRITING & RESEARCH (100% FREE CLOUD ENGINE)
+--------------------------------------------------------------------------------
+For drafting content from scratch or searching the web, the assistant uses
+free AI keys:
+
+* On first launch, click "Keys" at the top:
+  - Option A (Recommended): Click "Get Groq key (free)" — gives thousands of 
+    free uses per day.
+  - Option B: Click "Get Google key (free)" — gives 20 free uses per day.
+* Paste your key into the box and click "Save keys". You only need to do this ONCE.
+
+Examples of what to ask the AI:
+- "Draft a professional 2-page project proposal with budget and deliverables"
+- "Research the latest facts about renewable solar energy and summarize findings"
+- "Rewrite the selected paragraph to sound more executive and concise"
+- "Translate the selected text into fluent French / Spanish / German"
+- "Review this document and add margin critique comments"
+
+
+--------------------------------------------------------------------------------
+5. HANDY SHORTCUTS
+--------------------------------------------------------------------------------
+* Ctrl + Enter : Send your request
+* Ctrl + Space : Toggle voice dictation (speak directly to Word!)
+* "Snap" Button: Snaps the assistant window neatly beside your Word window
+
+
+--------------------------------------------------------------------------------
+6. TROUBLESHOOTING
+--------------------------------------------------------------------------------
+Q: It says "Open document: (checking...)" or doesn't detect my document?
+A: Make sure Microsoft Word is running with a document open, then click "Refresh".
+
+Q: Word shows a pop-up dialog (like Save As or Find)?
+A: Close the dialog in Word first, then click "Try again" in the assistant.
+
+Q: Can I share this with my team or friends?
+A: YES! Simply share the "AI-Assistant-for-Word-v1.0.zip" file. Anyone on Windows 
+   can unzip it and run it immediately!
+================================================================================
