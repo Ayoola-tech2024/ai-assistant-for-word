@@ -116,7 +116,8 @@ TOOLS = ["add_footer", "replace_text", "delete_para_containing",
          "set_orientation", "add_header", "add_page_numbers", "word_count",
          "export_pdf", "undo_last", "toggle_track_changes", "add_comment",
          "insert_toc", "add_watermark", "insert_chart", "insert_image",
-         "get_document_analytics", "translate"]
+         "get_document_analytics", "translate", "adjust_font_size",
+         "clean_markdown_artifacts", "format_scientific_names"]
 
 REQUIRED_ARGS = {
     "add_footer": ("text",),
@@ -155,6 +156,9 @@ REQUIRED_ARGS = {
     "insert_image": ("prompt",),
     "get_document_analytics": (),
     "translate": ("target_language",),
+    "adjust_font_size": (),
+    "clean_markdown_artifacts": (),
+    "format_scientific_names": (),
 }
 OPTIONAL_ARGS = {
     "draft": ("place",),
@@ -175,6 +179,9 @@ OPTIONAL_ARGS = {
     "insert_image": ("place",),
     "export_pdf": ("open_folder",),
     "translate": ("scope",),
+    "adjust_font_size": ("delta", "target_size"),
+    "clean_markdown_artifacts": ("reduce_font",),
+    "format_scientific_names": ("italic", "underline"),
 }
 
 RESPONSE_SCHEMA = {
@@ -218,6 +225,11 @@ RESPONSE_SCHEMA = {
                             "enum": ["single", "1.5", "double"]},
                 "orientation": {"type": "STRING",
                                 "enum": ["portrait", "landscape"]},
+                "delta": {"type": "NUMBER"},
+                "target_size": {"type": "NUMBER"},
+                "reduce_font": {"type": "BOOLEAN"},
+                "italic": {"type": "BOOLEAN"},
+                "underline": {"type": "BOOLEAN"},
             },
         },
         "explain": {"type": "STRING"},
@@ -236,6 +248,9 @@ SYSTEM = (
     "- format_text {style, page?}: underline, bold, or italic. Use page when "
     "the user names one ('first page' -> 1), highlight when they say "
     "'this/selected', else whole document.\n"
+    "- adjust_font_size {delta?=-2, target_size?}: decrease or increase font size across document or selection.\n"
+    "- clean_markdown_artifacts {reduce_font?=false}: clean raw markdown hashtags (#), asterisks, brackets, and bracketed placeholders.\n"
+    "- format_scientific_names {italic?=true, underline?=true}: find all botanical and biological scientific names (binomial nomenclature) and format with italics and underline.\n"
     "Find & move:\n"
     "- find_text {text}: locate text — reports count + pages and jumps the "
     "cursor there. Use for 'find/where is'. Never use select_text just to "
@@ -279,6 +294,8 @@ SYSTEM = (
     "- ask {question}: answer questions about the document.\n"
     "- research {query, instruction}: search the internet and add findings.\n"
     "Rules: writing new content -> draft. Improving existing text -> refine. Translating language -> translate. "
+    "Botanical/scientific names -> format_scientific_names. Cleaning markdown/#/placeholders -> clean_markdown_artifacts. "
+    "Reducing/adjusting font size -> adjust_font_size. "
     "Charts -> insert_chart. Images -> insert_image. Tables with data -> insert_data_table. "
     "Margin review notes -> review. Redline revisions -> toggle_track_changes. Questions -> ask. "
     "Analytics/health -> get_document_analytics. Export PDF -> export_pdf. "
@@ -634,11 +651,195 @@ def read_file_context(filepath, max_chars=6000):
         return None, "Failed to read reference file: " + str(e)[:150]
 
 
+def fast_local_plan(user_text):
+    """Instant offline deterministic heuristic planner for Word actions (zero AI, 0ms, 100% offline)."""
+    t = (user_text or "").strip().lower()
+    if not t:
+        return None
+
+    # 1. Botanical / scientific names formatting (italics + underline)
+    if any(w in t for w in ["botanical", "scientific name", "binomial nomenclature", "binomial name"]) or \
+       ("italise" in t and "underline" in t) or ("italic" in t and "underline" in t) or \
+       ("italise" in t and "name" in t) or ("italic" in t and "name" in t):
+        return {
+            "tool": "format_scientific_names",
+            "args": {"italic": True, "underline": True},
+            "explain": "Instantly format all botanical and scientific names with italics and underline (offline)."
+        }
+
+    # 2. Clean markdown artifacts & placeholders & optional font reduction
+    if any(w in t for w in ["placeholder", "sharp", "sharps", "hashtag", "clean markdown", "clean formatting", "asterisk"]) or \
+       ("sharps" in t and "font" in t) or ("placeholder" in t and "font" in t):
+        reduce_font = any(w in t for w in ["reduce", "smaller", "decrease", "lower font", "shrink font"])
+        return {
+            "tool": "clean_markdown_artifacts",
+            "args": {"reduce_font": reduce_font},
+            "explain": "Clean raw markdown artifacts (#, *, placeholders) and %s (offline)." %
+                       ("reduce font size" if reduce_font else "normalize formatting")
+        }
+
+    # 3. Font adjustments (delta or absolute)
+    import re
+    m_size = re.search(r'\b(?:set |change )?font size (?:to )?(\d{1,2})\b', t)
+    if m_size:
+        return {
+            "tool": "font_size",
+            "args": {"size": int(m_size.group(1))},
+            "explain": "Set font size to %spt (offline)." % m_size.group(1)
+        }
+    if any(w in t for w in ["reduce font", "decrease font", "smaller font", "reduce the font", "lower the font", "shrink font"]):
+        return {
+            "tool": "adjust_font_size",
+            "args": {"delta": -2},
+            "explain": "Decrease font size by 2pt across document (offline)."
+        }
+    if any(w in t for w in ["increase font", "enlarge font", "bigger font", "increase the font", "raise font"]):
+        return {
+            "tool": "adjust_font_size",
+            "args": {"delta": 2},
+            "explain": "Increase font size by 2pt across document (offline)."
+        }
+
+    # 4. Undo
+    if t in ("undo", "undo last", "undo last change", "undo change", "revert"):
+        return {
+            "tool": "undo_last",
+            "args": {"steps": 1},
+            "explain": "Undo last edit in Word (offline)."
+        }
+
+    # 5. Export PDF
+    if any(w in t for w in ["export pdf", "export to pdf", "save as pdf", "convert to pdf", "make pdf"]):
+        return {
+            "tool": "export_pdf",
+            "args": {},
+            "explain": "Export active document to PDF and reveal in Explorer (offline)."
+        }
+
+    # 6. Word count & Reading stats
+    if any(w in t for w in ["word count", "count words", "how many words", "doc length"]):
+        return {
+            "tool": "word_count",
+            "args": {},
+            "explain": "Count words and characters in document (offline)."
+        }
+    if any(w in t for w in ["readability", "reading time", "document stats", "document analytics"]):
+        return {
+            "tool": "get_document_analytics",
+            "args": {},
+            "explain": "Calculate reading metrics and readability index (offline)."
+        }
+
+    # 7. Alignment
+    if any(w in t for w in ["align center", "center align", "center text", "center the text", "center it"]):
+        return {
+            "tool": "align_paras",
+            "args": {"how": "center"},
+            "explain": "Center align text (offline)."
+        }
+    if any(w in t for w in ["align left", "left align"]):
+        return {
+            "tool": "align_paras",
+            "args": {"how": "left"},
+            "explain": "Left align text (offline)."
+        }
+    if any(w in t for w in ["align right", "right align"]):
+        return {
+            "tool": "align_paras",
+            "args": {"how": "right"},
+            "explain": "Right align text (offline)."
+        }
+    if any(w in t for w in ["justify", "justify text", "align justify"]):
+        return {
+            "tool": "align_paras",
+            "args": {"how": "justify"},
+            "explain": "Justify text (offline)."
+        }
+
+    # 8. Page numbers
+    if any(w in t for w in ["add page number", "add page numbers", "number pages", "insert page number"]):
+        return {
+            "tool": "add_page_numbers",
+            "args": {},
+            "explain": "Insert page numbers in footer (offline)."
+        }
+
+    # 9. Line spacing
+    if any(w in t for w in ["double space", "double spacing", "line spacing 2", "2.0 spacing"]):
+        return {
+            "tool": "line_spacing",
+            "args": {"spacing": "double"},
+            "explain": "Set double line spacing (offline)."
+        }
+    if any(w in t for w in ["single space", "single spacing", "1.0 spacing"]):
+        return {
+            "tool": "line_spacing",
+            "args": {"spacing": "single"},
+            "explain": "Set single line spacing (offline)."
+        }
+    if any(w in t for w in ["1.5 space", "1.5 spacing", "one and a half spacing"]):
+        return {
+            "tool": "line_spacing",
+            "args": {"spacing": "1.5"},
+            "explain": "Set 1.5 line spacing (offline)."
+        }
+
+    # 10. Watermark
+    m_water = re.search(r'\b(?:add |set )?watermark\s+["\']?([^"\']+)["\']?', t)
+    if m_water:
+        wm = m_water.group(1).strip().upper()
+        if wm not in ("TO", "A", "THE", "PLEASE"):
+            return {
+                "tool": "add_watermark",
+                "args": {"text": wm},
+                "explain": "Add diagonal watermark '%s' across all pages (offline)." % wm
+            }
+
+    # 11. Table of Contents
+    if any(w in t for w in ["insert toc", "table of contents", "generate toc"]):
+        return {
+            "tool": "insert_toc",
+            "args": {"place": "cursor"},
+            "explain": "Insert Table of Contents from headings (offline)."
+        }
+
+    # 12. Orientation
+    if "landscape" in t:
+        return {
+            "tool": "set_orientation",
+            "args": {"orientation": "landscape"},
+            "explain": "Set document layout to landscape (offline)."
+        }
+    if "portrait" in t:
+        return {
+            "tool": "set_orientation",
+            "args": {"orientation": "portrait"},
+            "explain": "Set document layout to portrait (offline)."
+        }
+
+    return None
+
+
 def plan_action(user_text, note_fn=None, extra_context=None):
     """Plan only. Returns plan dict, never touches the document."""
     user_text = (user_text or "").strip()
     if not user_text:
         return {"ok": False, "error": "Empty request."}
+
+    # Fast offline deterministic path: instant execution without API or quota
+    fast = fast_local_plan(user_text)
+    if fast:
+        ctx = word_agent.get_context()
+        if not ctx.get("ok"):
+            return ctx
+        v = _validate(fast)
+        v["doc"] = ctx.get("doc")
+        if "explain" in fast:
+            v["explain"] = fast["explain"]
+        if note_fn:
+            note_fn("Instant offline action: %s" % (fast.get("explain") or v["tool"]))
+        return v
+
     cfg = load_config()
     if not cfg.get("GEMINI_KEYS") and not cfg.get("GROQ_KEYS"):
         return {"ok": False,

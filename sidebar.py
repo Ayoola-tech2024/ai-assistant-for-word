@@ -103,6 +103,9 @@ ARG_LABELS = {
     "insert_image": (("prompt", "Illustration idea"),),
     "get_document_analytics": (),
     "translate": (("target_language", "Target language"),),
+    "adjust_font_size": (("delta", "Change by (pt)"), ("target_size", "Set size to")),
+    "clean_markdown_artifacts": (("reduce_font", "Reduce font size"),),
+    "format_scientific_names": (("italic", "Italicize"), ("underline", "Underline")),
 }
 
 TOOL_NAMES = {
@@ -142,6 +145,9 @@ TOOL_NAMES = {
     "insert_image": "Insert AI illustration",
     "get_document_analytics": "Analyze reading metrics & stats",
     "translate": "Translate text",
+    "adjust_font_size": "Adjust font size",
+    "clean_markdown_artifacts": "Clean markdown artifacts & placeholders",
+    "format_scientific_names": "Format botanical / scientific names",
 }
 
 
@@ -149,7 +155,15 @@ class Sidebar:
     def __init__(self, root):
         self.root = root
         root.title("AI Assistant for Word")
-        root.geometry("400x640")
+        s_width = root.winfo_screenwidth()
+        s_height = root.winfo_screenheight()
+        w = 400
+        h = min(640, s_height - 80)
+        x = max(20, s_width - w - 30)
+        y = 50
+        root.geometry("%dx%d+%d+%d" % (w, h, x, y))
+        root.deiconify()
+        root.lift()
         root.attributes("-topmost", True)
         self.pending = None
         self.busy_action = None  # ("plan", cmd) or ("execute", plan)
@@ -418,19 +432,33 @@ class Sidebar:
 
     def snap_to_word(self):
         try:
-            hwnd = win32gui.FindWindow("OpusApp", None)
-            if not hwnd or not win32gui.IsWindowVisible(hwnd):
-                self._say("Word is not open. Open a document first to snap beside it.")
-                return False
-            rect = win32gui.GetWindowRect(hwnd)
-            w_left, w_top, w_right, w_bottom = rect
             s_width = self.root.winfo_screenwidth()
             s_height = self.root.winfo_screenheight()
             w = 400
+            h = min(640, s_height - 80)
+            hwnd = win32gui.FindWindow("OpusApp", None)
+            if not hwnd or not win32gui.IsWindowVisible(hwnd) or win32gui.IsIconic(hwnd):
+                x = max(20, s_width - w - 30)
+                y = 50
+                self.root.geometry("%dx%d+%d+%d" % (w, h, x, y))
+                self.root.deiconify()
+                self.root.lift()
+                return False
+            rect = win32gui.GetWindowRect(hwnd)
+            w_left, w_top, w_right, w_bottom = rect
+            if w_left < -1000 or w_right <= 0:
+                x = max(20, s_width - w - 30)
+                y = 50
+                self.root.geometry("%dx%d+%d+%d" % (w, h, x, y))
+                self.root.deiconify()
+                self.root.lift()
+                return False
             h = min(max(w_bottom - w_top, 560), s_height - 60)
             x = min(w_right, s_width - w - 10)
             y = max(0, w_top)
             self.root.geometry("%dx%d+%d+%d" % (w, h, x, y))
+            self.root.deiconify()
+            self.root.lift()
             self._say("Snapped beside Word.")
             return True
         except Exception as e:
@@ -440,7 +468,7 @@ class Sidebar:
     def _templates_popup(self):
         pop = tk.Toplevel(self.root)
         pop.title("Templates")
-        pop.geometry("420x540")
+        pop.geometry("420x580")
         pop.attributes("-topmost", True)
         ttk.Label(pop, text="One-Click Document Templates",
                   font=("Segoe UI", 11, "bold"), padding=(10, 10, 10, 4)).pack(anchor="w")
@@ -448,6 +476,12 @@ class Sidebar:
                   font=("Segoe UI", 9), padding=(10, 0, 10, 8)).pack(anchor="w")
 
         templates = [
+            ("🌿 Format Botanical / Scientific Names",
+             "Format all botanical and biological scientific names (binomial nomenclature) with italics and underline."),
+            ("🧹 Clean Markdown & Placeholders",
+             "Remove raw markdown sharps (#), asterisks, brackets, and bracketed placeholders from document."),
+            ("🔤 Reduce Font Size (-2pt)",
+             "Decrease font size by 2pt across the entire document."),
             ("📄 1-Click Export to PDF",
              "Export this active Word document to a clean PDF and reveal it in File Explorer."),
             ("📊 Document Reading & Readability Stats",
@@ -629,6 +663,8 @@ class Sidebar:
         lines = ["I will: %s" % TOOL_NAMES.get(out["tool"], out["tool"])]
         for key, label in ARG_LABELS.get(out["tool"], ()):
             lines.append("%s: %s" % (label, out["args"].get(key, "")))
+        if out.get("explain"):
+            lines.append("Note: %s" % out["explain"])
         lines.append("In: %s" % (out.get("doc") or {}).get("name", "?"))
         self._show_preview("\n".join(lines))
         self.approve_btn.config(text="Yes, do it", state="normal")

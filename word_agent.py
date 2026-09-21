@@ -129,6 +129,29 @@ def delete_para_containing(text):
                 "error": str(e)[:300]}
 
 
+def _clean_markdown_text(text):
+    """Strip raw markdown hashtags, asterisks, and bracket artifacts before inserting into Word."""
+    if not text:
+        return ""
+    import re
+    lines = []
+    for line in str(text).splitlines():
+        s = line.strip()
+        if s.startswith("### "):
+            lines.append(s[4:])
+        elif s.startswith("## "):
+            lines.append(s[3:])
+        elif s.startswith("# "):
+            lines.append(s[2:])
+        else:
+            lines.append(line)
+    cleaned = "\r".join(lines)
+    cleaned = re.sub(r'\*\*([^*]+)\*\*', r'\1', cleaned)
+    cleaned = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'\1', cleaned)
+    cleaned = re.sub(r'\[(Sources?:[^\]]+)\]', r'\1', cleaned)
+    return cleaned
+
+
 def insert_at_end(text):
     """Append a new paragraph at end of document."""
     try:
@@ -136,7 +159,7 @@ def insert_at_end(text):
         info = _doc_id(doc)
         end = doc.Content
         end.Collapse(0)  # 0 = wdCollapseEnd
-        end.Text = text + "\r"
+        end.Text = _clean_markdown_text(text) + "\r"
         return {"ok": True, "action": "insert_at_end", "doc": info}
     except pywintypes.com_error as e:
         if _is_busy(e):
@@ -194,10 +217,11 @@ def set_full_text(text):
     try:
         app, doc = _bind()
         info = _doc_id(doc)
+        cleaned = _clean_markdown_text(text)
         rng = doc.Content
-        rng.Text = text if text.endswith("\r") else text + "\r"
+        rng.Text = cleaned if cleaned.endswith("\r") else cleaned + "\r"
         return {"ok": True, "action": "set_full_text", "doc": info,
-                "chars": len(text)}
+                "chars": len(cleaned)}
     except pywintypes.com_error as e:
         if _is_busy(e):
             return _busy_result("set_full_text")
@@ -211,10 +235,11 @@ def insert_at_cursor(text):
     try:
         app, doc = _bind()
         info = _doc_id(doc)
+        cleaned = _clean_markdown_text(text)
         try:
             sel = app.Selection
             if sel is not None and doc.Name == app.ActiveDocument.Name:
-                sel.Range.Text = text
+                sel.Range.Text = cleaned
                 return {"ok": True, "action": "insert_at_cursor",
                         "doc": info, "at": "cursor"}
         except pywintypes.com_error as e:
@@ -1137,6 +1162,128 @@ def insert_image(prompt, place="end"):
         return {"ok": False, "action": "insert_image", "error": str(e)[:300]}
 
 
+def adjust_font_size(delta=-2, target_size=None):
+    """Adjust font size by delta (+2 or -2) or set to specific target_size across selection or document."""
+    try:
+        app, doc = _bind()
+        info = _doc_id(doc)
+        sel = app.Selection
+        target_rng = sel.Range if (sel and len(sel.Text or "") > 1) else doc.Content
+        try:
+            cur = float(target_rng.Font.Size)
+        except Exception:
+            cur = 12.0
+        if target_size is not None:
+            new_sz = max(6.0, min(72.0, float(target_size)))
+        else:
+            new_sz = max(6.0, min(72.0, cur + (float(delta) if delta is not None else -2.0)))
+        target_rng.Font.Size = new_sz
+        action_desc = "reduced" if (float(delta) if delta is not None else -2.0) < 0 else "adjusted"
+        return {"ok": True, "action": "adjust_font_size", "doc": info,
+                "report": "Font size %s to %g pt." % (action_desc, new_sz)}
+    except pywintypes.com_error as e:
+        if _is_busy(e):
+            return _busy_result("adjust_font_size")
+        return {"ok": False, "action": "adjust_font_size", "error": str(e)[:300]}
+    except Exception as e:
+        return {"ok": False, "action": "adjust_font_size", "error": str(e)[:300]}
+
+
+def clean_markdown_artifacts(reduce_font=False):
+    """Strip raw markdown hashtags (#, ##), asterisks, and placeholders across the document."""
+    try:
+        app, doc = _bind()
+        info = _doc_id(doc)
+
+        rng = doc.Content
+        f = rng.Find
+        f.ClearFormatting()
+        f.Replacement.ClearFormatting()
+        # wdFindContinue = 1, wdReplaceAll = 2
+        f.Execute("### ", False, False, False, False, False, True, 1, False, "", 2)
+        f.Execute("## ", False, False, False, False, False, True, 1, False, "", 2)
+        f.Execute("# ", False, False, False, False, False, True, 1, False, "", 2)
+        f.Execute("**", False, False, False, False, False, True, 1, False, "", 2)
+        # Strip generic bracket placeholders like [Insert Table Here], [placeholder], [Source: ...]
+        try:
+            f.Execute(r"\[[!\]]@\]", False, False, True, False, False, True, 1, False, "", 2)
+        except Exception:
+            f.Execute("[Sources: ", False, False, False, False, False, True, 1, False, "Sources: ", 2)
+            f.Execute("]", False, False, False, False, False, True, 1, False, "", 2)
+
+        if reduce_font:
+            try:
+                cur = float(doc.Content.Font.Size) or 12.0
+                doc.Content.Font.Size = max(8.0, cur - 2.0)
+            except Exception:
+                pass
+
+        return {"ok": True, "action": "clean_markdown_artifacts", "doc": info,
+                "report": "Cleaned markdown artifacts: stripped raw sharps (#), asterisks, and bracketed placeholders."}
+    except pywintypes.com_error as e:
+        if _is_busy(e):
+            return _busy_result("clean_markdown_artifacts")
+        return {"ok": False, "action": "clean_markdown_artifacts", "error": str(e)[:300]}
+    except Exception as e:
+        return {"ok": False, "action": "clean_markdown_artifacts", "error": str(e)[:300]}
+
+
+def format_scientific_names(italic=True, underline=True):
+    """Find botanical & biological scientific names (binomial nomenclature) and format with italics and underline."""
+    try:
+        import re
+        app, doc = _bind()
+        info = _doc_id(doc)
+
+        text = doc.Content.Text or ""
+        latin_species_suffix = r'(?:us|a|um|is|e|ii|ensis|oides|alis|icus|ana|ens|or|er|on)'
+        latin_genus_suffix = r'(?:us|a|is|um|on|es|ter|ix|ex|ops|pus)'
+        binomial_pattern = re.compile(rf'\b([A-Z][a-z]+{latin_genus_suffix}\s+[a-z]+{latin_species_suffix})\b')
+        taxa_pattern = re.compile(r'\b([A-Z][a-z]{3,}(?:a|ae|idae|inae|tera))\b')
+
+        common_starters = {"The", "This", "That", "These", "Those", "There", "Their", "When", "Where",
+                           "What", "Which", "While", "With", "Without", "After", "Before", "During",
+                           "From", "Into", "Over", "Under", "Between", "Through", "Although", "Because",
+                           "Many", "Some", "Most", "Other", "Another"}
+
+        terms = set()
+        for m in binomial_pattern.finditer(text):
+            t = m.group(1).strip()
+            if t.split()[0] not in common_starters:
+                terms.add(t)
+
+        for m in taxa_pattern.finditer(text):
+            t = m.group(1).strip()
+            if t not in common_starters:
+                terms.add(t)
+
+        count = 0
+        for term in sorted(terms, key=len, reverse=True):
+            try:
+                rng = doc.Content
+                f = rng.Find
+                f.ClearFormatting()
+                f.Replacement.ClearFormatting()
+                if italic:
+                    f.Replacement.Font.Italic = True
+                if underline:
+                    f.Replacement.Font.Underline = 1  # wdUnderlineSingle
+                # Execute(FindText, MatchCase, MatchWholeWord, MatchWildcards, MatchSoundsLike, MatchAllWordForms, Forward, Wrap, Format, ReplaceWith, Replace)
+                f.Execute(term, True, True, False, False, False, True, 1, True, term, 2)
+                count += 1
+            except Exception:
+                pass
+
+        return {"ok": True, "action": "format_scientific_names", "doc": info,
+                "report": "Formatted %d botanical / scientific names with italics and underline." % count}
+    except pywintypes.com_error as e:
+        if _is_busy(e):
+            return _busy_result("format_scientific_names")
+        return {"ok": False, "action": "format_scientific_names", "error": str(e)[:300]}
+    except Exception as e:
+        return {"ok": False, "action": "format_scientific_names", "error": str(e)[:300]}
+
+
 TOOLS = {
     "add_footer": add_footer,
     "replace_text": replace_text,
@@ -1170,5 +1317,8 @@ TOOLS = {
     "insert_chart": insert_chart,
     "insert_image": insert_image,
     "get_document_analytics": get_document_analytics,
+    "adjust_font_size": adjust_font_size,
+    "clean_markdown_artifacts": clean_markdown_artifacts,
+    "format_scientific_names": format_scientific_names,
 }
 
